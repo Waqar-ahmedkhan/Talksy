@@ -1,6 +1,6 @@
 import http from "http";
 import app from "./app.js";
-import { initChatSocket } from "./sockets/chattingSockets.js"; // Your Socket.IO module
+import { initChatSocket } from "./sockets/chattingSockets.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -13,7 +13,7 @@ const server = http.createServer(app);
 // Initialize Socket.IO (real-time chat)
 const io = initChatSocket(server);
 
-// Optional: Handle Socket.IO connections for logging/debug
+// Log socket events for debugging
 io.on("connection", (socket) => {
   console.log(`⚡ New client connected: ${socket.id}`);
   socket.on("disconnect", () => {

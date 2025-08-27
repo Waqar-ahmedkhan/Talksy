@@ -6,8 +6,7 @@ const profileSchema = new mongoose.Schema({
   randomNumber: { type: String, required: true },
   isVisible: { type: Boolean, default: false },
   isNumberVisible: { type: Boolean, default: false },
-  avatar: { type: Buffer, default: null }, // store image as binary
-  avatarContentType: { type: String, default: null }, // MIME type (image/png, image/jpeg)
+  avatarUrl: { type: String, default: "" },  // for controller compatibility
   createdAt: { type: Date, default: Date.now },
 });
 
