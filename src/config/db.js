@@ -16,4 +16,5 @@ const connectDB = async () => {
   }
 };
 
-export default connectDB;
+export { mongoose };       // ✅ Export mongoose
+export default connectDB;  // ✅ Export connection function

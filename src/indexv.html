@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🎙️ Audio Call Test</title>
+  <title>🎥 Video Call Test</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -46,9 +47,28 @@
     button.disabled { background: #666; cursor: not-allowed; }
     .screen { display: none; }
     .screen.active { display: block; }
-    .audio-container {
-      margin: 20px 0;
-      text-align: center;
+    .video-container {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      background: black;
+      border-radius: 10px;
+      margin: 10px 0;
+      overflow: hidden;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .label {
+      position: absolute;
+      bottom: 5px;
+      left: 5px;
+      background: rgba(0,0,0,0.7);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
     }
     .incoming-call {
       background: #0f3460;
@@ -82,8 +102,8 @@
   <div class="container">
     <!-- Login Screen -->
     <div id="loginScreen" class="screen active">
-      <h1>🎙️ Audio Call</h1>
-      <input type="text" id="userIdInput" placeholder="Your Phone (e.g., +923001234567)" />
+      <h1>🎥 Video Call</h1>
+      <input type="text" id="userIdInput" placeholder="Your User ID (e.g., user1)" />
       <button id="loginBtn">Login</button>
     </div>
 
@@ -93,7 +113,7 @@
       <p id="status">🟢 Online</p>
       <h3>Online Users:</h3>
       <ul id="onlineList"></ul>
-      <input type="text" id="calleeIdInput" placeholder="Select or enter phone to call" />
+      <input type="text" id="calleeIdInput" placeholder="Select or enter user ID to call" />
       <button id="startCallBtn">📞 Call</button>
       
       <div id="incomingCallBox" class="incoming-call" style="display: none;">
@@ -105,8 +125,13 @@
 
     <!-- Call Screen -->
     <div id="callScreen" class="screen">
-      <div class="audio-container">
-        <p id="callStatus">In Call with <span id="remoteLabel"></span></p>
+      <div class="video-container">
+        <video id="localVideo" autoplay muted></video>
+        <div class="label">You</div>
+      </div>
+      <div class="video-container">
+        <video id="remoteVideo" autoplay></video>
+        <div class="label" id="remoteLabel">Remote</div>
       </div>
       <button id="endCallBtn" class="reject">⏹️ End Call</button>
     </div>
@@ -127,7 +152,9 @@
     const rejectCallBtn = document.getElementById('rejectCallBtn');
     const endCallBtn = document.getElementById('endCallBtn');
     
-    const callStatus = document.getElementById('callStatus');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const callerName = document.getElementById('callerName');
     const remoteLabel = document.getElementById('remoteLabel');
     const status = document.getElementById('status');
     const onlineList = document.getElementById('onlineList');
@@ -149,23 +176,15 @@
 
     loginBtn.onclick = () => {
       const id = userIdInput.value.trim();
-      if (!id) return alert('Enter a valid phone number');
+      if (!id) return alert('Enter a valid user ID');
       
       userId = id;
       loginScreen.classList.remove('active');
       dashboardScreen.classList.add('active');
 
-      socket = io('/audio-socket');
+      socket = io('/video-socket');
       socket.emit('join', userId);
-      socket.emit('request_online_users'); // Request initial list
-
-      // Fallback to request again after 1 second if no response
-      setTimeout(() => {
-        if (onlineUsersList.length === 0) {
-          console.log('No online users received, requesting again at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-          socket.emit('request_online_users');
-        }
-      }, 1000);
+      socket.emit('request_online_users'); // Request initial online users
 
       setupSocketHandlers();
     };
@@ -175,16 +194,22 @@
         console.log('📞 Incoming call from:', data.callerId, 'at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
         currentPeerId = data.callerId;
         incomingOffer = data.offer;
-        callerName.textContent = `Incoming call from ${data.callerId}`;
+        callerName.textContent = `${data.callerId} is calling...`;
         incomingCallBox.style.display = 'block';
       });
 
       socket.on('call_accepted', async (data) => {
         console.log('✅ Call accepted by:', data.calleeId, 'at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
         remoteLabel.textContent = data.calleeId;
-        callStatus.textContent = `In Call with ${data.calleeId}`;
-        dashboardScreen.classList.remove('active');
-        callScreen.classList.add('active');
+        try {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+          dashboardScreen.classList.remove('active');
+          callScreen.classList.add('active');
+        } catch (e) {
+          console.error('Error setting remote description:', e);
+          alert('Call setup failed');
+          resetCall();
+        }
       });
 
       socket.on('call_rejected', (data) => {
@@ -252,8 +277,7 @@
     startCallBtn.onclick = async () => {
       const calleeId = calleeIdInput.value.trim();
       console.log('Attempting to call:', calleeId, 'Online users:', onlineUsersList, 'at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-      if (!calleeId || calleeId === userId || !onlineUsersList.some(u => u.toLowerCase() === calleeId.toLowerCase())) {
-        console.log('Call blocked: Callee not in online list or invalid ID');
+      if (!calleeId || calleeId === userId || !onlineUsersList.includes(calleeId)) {
         alert('Please select an online user to call');
         return;
       }
@@ -262,19 +286,15 @@
       remoteLabel.textContent = currentPeerId;
 
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // No video stream for audio-only call
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
         
         peerConnection = new RTCPeerConnection(config);
         
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
         peerConnection.ontrack = (event) => {
-          // Handle remote audio stream
-          if (event.track.kind === 'audio') {
-            remoteLabel.textContent = currentPeerId;
-            callStatus.textContent = `In Call with ${currentPeerId}`;
-          }
+          remoteVideo.srcObject = event.streams[0];
         };
 
         peerConnection.onicecandidate = (event) => {
@@ -307,19 +327,17 @@
     acceptCallBtn.onclick = async () => {
       incomingCallBox.style.display = 'none';
       remoteLabel.textContent = currentPeerId;
-      callStatus.textContent = `In Call with ${currentPeerId}`;
 
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
         
         peerConnection = new RTCPeerConnection(config);
         
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
         peerConnection.ontrack = (event) => {
-          if (event.track.kind === 'audio') {
-            remoteLabel.textContent = currentPeerId;
-          }
+          remoteVideo.srcObject = event.streams[0];
         };
 
         peerConnection.onicecandidate = (event) => {
@@ -371,6 +389,8 @@
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
       }
+      localVideo.srcObject = null;
+      remoteVideo.srcObject = null;
       
       if (currentPeerId) {
         socket.emit('end_call', {

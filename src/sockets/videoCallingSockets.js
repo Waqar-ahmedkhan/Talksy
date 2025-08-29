@@ -1,12 +1,12 @@
-// sockets/videoCallingSockets.js
-
 import { Server } from "socket.io";
+import { mongoose } from "../config/db.js"; // Import Mongoose instance
 import User from "../models/User.js";
 import Block from "../models/Block.js";
 
 /**
  * Initializes the Video Calling Socket with WebRTC signaling support.
  * Features:
+ * - Real-time online user tracking with database sync
  * - Call initiation with offer
  * - Incoming call ringing
  * - Accept/Reject call
@@ -22,16 +22,39 @@ export const initVideoSocket = (server) => {
   });
 
   const onlineUsers = new Map(); // userId -> socketId
-  const busyUsers = new Set(); // userIds currently in any call (audio or video)
+  const busyUsers = new Set();   // userIds currently in any call (audio or video)
   const pendingCalls = new Map(); // calleeId -> { callerId, type ('audio' | 'video'), offer }
 
-  io.on("connection", (socket) => {
-    console.log("User connected to video socket:", socket.id);
+  // Broadcast online users list to all clients
+  const broadcastOnlineUsers = () => {
+    const onlineUsersArray = Array.from(onlineUsers.keys());
+    io.emit("online_users", onlineUsersArray);
+    console.log("Broadcasted online users at", new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }), ":", onlineUsersArray);
+  };
 
-    /** User joins video socket (for presence in video calling system) */
+  io.on("connection", (socket) => {
+    console.log("User connected to video socket:", socket.id, "at", new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
+
+    /** User joins video socket (updates presence in database) */
     socket.on("join", async (userId) => {
-      onlineUsers.set(userId, socket.id);
-      console.log(`User ${userId} joined video socket`);
+      if (!userId) {
+        console.log("Invalid userId, disconnecting socket:", socket.id);
+        return socket.disconnect();
+      }
+
+      const userIdStr = userId.toString();
+      onlineUsers.set(userIdStr, socket.id);
+      socket.userId = userIdStr;
+
+      // Update user online status in database
+      await User.findOneAndUpdate({ phone: userIdStr }, { online: true, lastSeen: new Date() }, { upsert: true });
+      console.log(`User ${userIdStr} joined video socket and marked online`);
+      broadcastOnlineUsers();
+    });
+
+    /** Request initial online users list */
+    socket.on("request_online_users", () => {
+      broadcastOnlineUsers();
     });
 
     /**
@@ -40,50 +63,59 @@ export const initVideoSocket = (server) => {
      */
     socket.on("call_user", async ({ callerId, calleeId, offer, callType = "video" }) => {
       try {
+        const caller = callerId.toString();
+        const callee = calleeId.toString();
+
+        console.log(`Call attempt: ${caller} → ${callee} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
+
         // Prevent self-call
-        if (callerId === calleeId) {
+        if (caller === callee) {
+          console.log("Self-call attempt detected");
           return socket.emit("call_error", { error: "You cannot call yourself" });
+        }
+
+        // Check if callee is online
+        if (!onlineUsers.has(callee)) {
+          console.log(`Callee ${callee} is offline`);
+          return socket.emit("call_error", { error: "User is offline" });
         }
 
         // Check if users are blocked
         const blocked = await Block.findOne({
           $or: [
-            { blockerId: calleeId, blockedId: callerId },
-            { blockerId: callerId, blockedId: calleeId },
+            { blockerId: callee, blockedId: caller },
+            { blockerId: caller, blockedId: callee },
           ],
         });
         if (blocked) {
+          console.log(`Call blocked: ${caller} → ${callee}`);
           return socket.emit("call_error", { error: "Cannot call: User is blocked" });
         }
 
-        // Check if callee is online
-        if (!onlineUsers.has(calleeId)) {
-          return socket.emit("call_error", { error: "User is offline" });
-        }
-
-        // Check if callee is already in a call
-        if (busyUsers.has(calleeId)) {
-          return socket.emit("user_busy", { calleeId });
-        }
-
-        // Prevent multiple incoming calls
-        if (pendingCalls.has(calleeId)) {
-          return socket.emit("user_busy", { calleeId });
+        // Check if callee is busy
+        if (busyUsers.has(callee) || pendingCalls.has(callee)) {
+          console.log(`Callee ${callee} is busy or has a pending call`);
+          return socket.emit("user_busy", { calleeId: callee });
         }
 
         // Store pending call
-        pendingCalls.set(calleeId, { callerId, offer, callType });
+        pendingCalls.set(callee, { callerId: caller, offer, callType });
+        console.log(`Pending call stored: ${caller} → ${callee}`);
 
-        const calleeSocket = onlineUsers.get(calleeId);
+        const calleeSocket = onlineUsers.get(callee);
         if (calleeSocket) {
           io.to(calleeSocket).emit("incoming_call", {
-            callerId,
+            callerId: caller,
             offer,
-            callType, // Tells client it's a video call
+            callType,
           });
+          console.log(`Incoming call sent to ${callee} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
+        } else {
+          console.warn(`Callee socket not found for ${callee}`);
         }
 
-        socket.emit("calling", { calleeId, callType }); // Notify caller
+        socket.emit("calling", { calleeId: callee, callType });
+        console.log(`Call initiated: ${caller} → ${callee} [${callType}]`);
       } catch (err) {
         console.error("call_user error:", err);
         socket.emit("call_error", { error: "Failed to initiate video call" });
@@ -95,36 +127,44 @@ export const initVideoSocket = (server) => {
      * Payload: { callerId, calleeId, answer }
      */
     socket.on("accept_call", ({ callerId, calleeId, answer }) => {
-      const pending = pendingCalls.get(calleeId);
-      if (!pending || pending.callerId !== callerId) {
+      const caller = callerId.toString();
+      const callee = calleeId.toString();
+
+      const pending = pendingCalls.get(callee);
+      if (!pending || pending.callerId !== caller) {
+        console.log(`No valid pending call for ${callee} from ${caller}`);
         return socket.emit("call_error", { error: "No pending call to accept" });
       }
 
       const { offer, callType } = pending;
-      pendingCalls.delete(calleeId);
+      pendingCalls.delete(callee);
+      console.log(`Pending call removed: ${caller} → ${callee}`);
 
       // Mark both users as busy
-      busyUsers.add(callerId);
-      busyUsers.add(calleeId);
+      busyUsers.add(caller);
+      busyUsers.add(callee);
+      console.log(`Users marked busy: ${caller}, ${callee}`);
 
-      const callerSocket = onlineUsers.get(callerId);
+      const callerSocket = onlineUsers.get(caller);
       if (callerSocket) {
         io.to(callerSocket).emit("call_accepted", {
           answer,
-          calleeId,
+          calleeId: callee,
           callType,
         });
+        console.log(`Call accepted sent to ${caller} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
       }
 
-      // Create a unique room for this call (caller + callee sorted)
-      const callRoom = [callerId, calleeId].sort().join("-");
+      // Create a unique room for this call
+      const callRoom = [caller, callee].sort().join("-");
       socket.join(callRoom); // Callee joins room
 
       if (callerSocket) {
         io.to(callerSocket).emit("join_call_room", { room: callRoom });
+        console.log(`Caller ${caller} joined room ${callRoom}`);
       }
 
-      console.log(`Call accepted: ${callerId} ↔ ${calleeId} [${callType}]`);
+      console.log(`Call accepted: ${caller} ↔ ${callee} [${callType}]`);
     });
 
     /**
@@ -132,28 +172,22 @@ export const initVideoSocket = (server) => {
      * Payload: { callerId, calleeId }
      */
     socket.on("reject_call", ({ callerId, calleeId }) => {
-      const pending = pendingCalls.get(calleeId);
-      if (!pending || pending.callerId !== callerId) {
+      const caller = callerId.toString();
+      const callee = calleeId.toString();
+
+      const pending = pendingCalls.get(callee);
+      if (!pending || pending.callerId !== caller) {
+        console.log(`No valid pending call to reject for ${callee}`);
         return socket.emit("call_error", { error: "No pending call to reject" });
       }
 
-      pendingCalls.delete(calleeId);
+      pendingCalls.delete(callee);
+      console.log(`Pending call rejected: ${caller} → ${callee}`);
 
-      const callerSocket = onlineUsers.get(callerId);
+      const callerSocket = onlineUsers.get(caller);
       if (callerSocket) {
         io.to(callerSocket).emit("call_rejected", { calleeId, reason: "rejected" });
-      }
-
-      console.log(`Call rejected: ${callerId} → ${calleeId}`);
-    });
-
-    /**
-     * Send busy response (optional if user manually taps "busy")
-     */
-    socket.on("send_busy", ({ callerId, calleeId }) => {
-      const callerSocket = onlineUsers.get(callerId);
-      if (callerSocket) {
-        io.to(callerSocket).emit("user_busy", { calleeId });
+        console.log(`Rejection sent to ${caller} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
       }
     });
 
@@ -165,6 +199,9 @@ export const initVideoSocket = (server) => {
       const targetSocket = onlineUsers.get(toUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("ice_candidate", { candidate });
+        console.log(`ICE candidate sent to ${toUserId} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
+      } else {
+        console.warn(`Target socket not found for ${toUserId}`);
       }
     });
 
@@ -173,38 +210,34 @@ export const initVideoSocket = (server) => {
      * Payload: { userId, peerId }
      */
     socket.on("end_call", ({ userId, peerId }) => {
-      // Remove from busy set
-      busyUsers.delete(userId);
-      busyUsers.delete(peerId);
+      const user = userId.toString();
+      const peer = peerId.toString();
 
-      const peerSocket = onlineUsers.get(peerId);
+      busyUsers.delete(user);
+      busyUsers.delete(peer);
+      console.log(`Users unmarked busy: ${user}, ${peer} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
+
+      const peerSocket = onlineUsers.get(peer);
       if (peerSocket) {
-        io.to(peerSocket).emit("call_ended", { fromUserId: userId });
+        io.to(peerSocket).emit("call_ended", { fromUserId: user });
+        console.log(`Call ended notification sent to ${peer}`);
       }
 
       // Leave call room
-      const callRoom = [userId, peerId].sort().join("-");
+      const callRoom = [user, peer].sort().join("-");
       socket.leave(callRoom);
-
-      console.log(`Call ended: ${userId} ↔ ${peerId}`);
+      console.log(`User ${user} left room ${callRoom}`);
     });
 
     /**
      * Handle user disconnect
      */
-    socket.on("disconnect", () => {
-      let disconnectedUserId = null;
-
-      // Find user by socket ID
-      for (const [userId, socketId] of onlineUsers.entries()) {
-        if (socketId === socket.id) {
-          disconnectedUserId = userId;
-          break;
-        }
-      }
+    socket.on("disconnect", async () => {
+      const disconnectedUserId = Array.from(onlineUsers.entries())
+        .find(([_, socketId]) => socketId === socket.id)?.[0];
 
       if (!disconnectedUserId) {
-        console.log("Unknown socket disconnected:", socket.id);
+        console.log("Unknown socket disconnected:", socket.id, "at", new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
         return;
       }
 
@@ -214,7 +247,10 @@ export const initVideoSocket = (server) => {
       onlineUsers.delete(disconnectedUserId);
       busyUsers.delete(disconnectedUserId);
 
-      // If user was receiving a call, notify caller
+      // Update user offline status in database
+      await User.findOneAndUpdate({ phone: disconnectedUserId }, { online: false, lastSeen: new Date() });
+
+      // Notify if user was receiving a call
       if (pendingCalls.has(disconnectedUserId)) {
         const { callerId } = pendingCalls.get(disconnectedUserId);
         pendingCalls.delete(disconnectedUserId);
@@ -222,19 +258,22 @@ export const initVideoSocket = (server) => {
         const callerSocket = onlineUsers.get(callerId);
         if (callerSocket) {
           io.to(callerSocket).emit("call_ended", { calleeId: disconnectedUserId, reason: "offline" });
+          console.log(`Call ended due to ${disconnectedUserId} going offline at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
         }
       }
 
-      // If user was in an active call, notify peer
-      // (We assume peer will detect disconnection via WebRTC, but send signal)
+      // Notify peers in active calls
       for (const [userId, sockId] of onlineUsers.entries()) {
         if (busyUsers.has(userId)) {
           const callRoom = [disconnectedUserId, userId].sort().join("-");
-          if (socket.rooms.has(callRoom)) {
+          if (io.sockets.adapter.rooms.has(callRoom)) {
             io.to(sockId).emit("call_ended", { fromUserId: disconnectedUserId, reason: "disconnected" });
+            console.log(`Notified ${userId} of ${disconnectedUserId}'s disconnect at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
           }
         }
       }
+
+      broadcastOnlineUsers();
     });
   });
 
