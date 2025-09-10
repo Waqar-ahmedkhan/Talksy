@@ -12,6 +12,7 @@ export const initChatSocket = (server) => {
 
     /** User joins chat */
     socket.on("join", async (userId) => {
+      console.log("User joined:", { userId, socketId: socket.id });
       onlineUsers.set(userId, socket.id);
       await User.findByIdAndUpdate(userId, { online: true, lastSeen: new Date() });
       socket.broadcast.emit("presence_update", { userId, online: true, lastSeen: new Date() });
@@ -19,35 +20,42 @@ export const initChatSocket = (server) => {
 
     /** Typing indicator for text */
     socket.on("typing", async ({ senderId, receiverId, typing }) => {
+      console.log("Typing event received:", { senderId, receiverId, typing });
       const blocked = await Block.findOne({
         $or: [
           { blockerId: receiverId, blockedId: senderId },
           { blockerId: senderId, blockedId: receiverId },
         ],
       });
-      if (blocked) return; // Prevent if blocked
+      if (blocked) return;
 
       const receiverSocket = onlineUsers.get(receiverId);
       if (receiverSocket) io.to(receiverSocket).emit("typing", { senderId, typing });
     });
 
-    /** Recording audio indicator (new: like WhatsApp voice recording status) */
+    /** Recording audio indicator */
     socket.on("recording_audio", async ({ senderId, receiverId, recording }) => {
+      console.log("Recording audio event received:", { senderId, receiverId, recording });
       const blocked = await Block.findOne({
         $or: [
           { blockerId: receiverId, blockedId: senderId },
           { blockerId: senderId, blockedId: receiverId },
         ],
       });
-      if (blocked) return; // Prevent if blocked
+      if (blocked) return;
 
       const receiverSocket = onlineUsers.get(receiverId);
       if (receiverSocket) io.to(receiverSocket).emit("recording_audio", { senderId, recording });
     });
 
-    /** Send text message (improved with status) */
-    socket.on("send_message", async ({ senderId, receiverId, message }) => {
+    /** Send text message */
+    socket.on("send_message", async ({ senderId, receiverId, content }) => {
+      console.log("Received send_message:", { senderId, receiverId, content });
       try {
+        if (!content || typeof content !== "string" || content.trim() === "") {
+          return socket.emit("message_error", { error: "Message content is required" });
+        }
+
         const blocked = await Block.findOne({
           $or: [
             { blockerId: receiverId, blockedId: senderId },
@@ -62,29 +70,52 @@ export const initChatSocket = (server) => {
           senderId,
           receiverId,
           type: "text",
-          content: message,
+          content,
           status: "sent",
           deletedFor: [],
+          createdAt: new Date(),
         });
 
         const receiverSocket = onlineUsers.get(receiverId);
         if (receiverSocket) {
-          io.to(receiverSocket).emit("receive_message", chat);
+          io.to(receiverSocket).emit("receive_message", {
+            id: chat._id.toString(),
+            senderId: chat.senderId.toString(),
+            receiverId: chat.receiverId.toString(),
+            content: chat.content,
+            type: chat.type,
+            timestamp: chat.createdAt,
+            status: chat.status,
+            duration: chat.duration,
+          });
           chat.status = "delivered";
           await chat.save();
         }
 
-        socket.emit("message_sent", chat); // Confirm to sender
+        socket.emit("message_sent", {
+          id: chat._id.toString(),
+          senderId: chat.senderId.toString(),
+          receiverId: chat.receiverId.toString(),
+          content: chat.content,
+          type: chat.type,
+          timestamp: chat.createdAt,
+          status: chat.status,
+          duration: chat.duration,
+        });
       } catch (err) {
         console.error("send_message error:", err);
         socket.emit("message_error", { error: "Failed to send message" });
       }
     });
 
-    /** Send voice message (new: supports up to 3 min, with duration) */
-    socket.on("send_voice", async ({ senderId, receiverId, voiceUrl, duration }) => {
+    /** Send voice message */
+    socket.on("send_voice", async ({ senderId, receiverId, content, duration }) => {
+      console.log("Received send_voice:", { senderId, receiverId, content, duration });
       try {
-        if (duration > 180) { // 3 minutes max (180 seconds)
+        if (!content || typeof content !== "string" || content.trim() === "") {
+          return socket.emit("voice_error", { error: "Voice content URL is required" });
+        }
+        if (duration > 180) {
           return socket.emit("voice_error", { error: "Voice message too long (max 3 minutes)" });
         }
 
@@ -102,75 +133,135 @@ export const initChatSocket = (server) => {
           senderId,
           receiverId,
           type: "voice",
-          content: voiceUrl, // URL to audio file (e.g., uploaded via separate endpoint)
-          duration, // in seconds, for client UI
+          content,
+          duration,
           status: "sent",
           deletedFor: [],
+          createdAt: new Date(),
         });
 
         const receiverSocket = onlineUsers.get(receiverId);
         if (receiverSocket) {
-          io.to(receiverSocket).emit("receive_voice", chat);
+          io.to(receiverSocket).emit("receive_voice", {
+            id: chat._id.toString(),
+            senderId: chat.senderId.toString(),
+            receiverId: chat.receiverId.toString(),
+            content: chat.content,
+            type: chat.type,
+            timestamp: chat.createdAt,
+            status: chat.status,
+            duration: chat.duration,
+          });
           chat.status = "delivered";
           await chat.save();
         }
 
-        socket.emit("voice_sent", chat); // Confirm to sender
+        socket.emit("voice_sent", {
+          id: chat._id.toString(),
+          senderId: chat.senderId.toString(),
+          receiverId: chat.receiverId.toString(),
+          content: chat.content,
+          type: chat.type,
+          timestamp: chat.createdAt,
+          status: chat.status,
+          duration: chat.duration,
+        });
       } catch (err) {
         console.error("send_voice error:", err);
         socket.emit("voice_error", { error: "Failed to send voice message" });
       }
     });
 
-    /** Read message (works for text and voice) */
+    /** Read message */
     socket.on("read_message", async ({ chatId, readerId }) => {
-      const chat = await Chat.findById(chatId);
-      if (chat && !chat.deletedFor.includes(readerId)) {
-        chat.status = "read";
-        await chat.save();
-        const senderSocket = onlineUsers.get(chat.senderId);
-        if (senderSocket) io.to(senderSocket).emit("message_read", chatId);
+      console.log("Received read_message:", { chatId, readerId });
+      try {
+        const chat = await Chat.findById(chatId);
+        if (chat && !chat.deletedFor.includes(readerId)) {
+          chat.status = "read";
+          await chat.save();
+          const senderSocket = onlineUsers.get(chat.senderId.toString());
+          if (senderSocket) io.to(senderSocket).emit("message_read", { id: chatId });
+        }
+      } catch (err) {
+        console.error("read_message error:", err);
       }
     });
 
-    /** Delete message (improved propagation for text/voice) */
+    /** Delete message */
     socket.on("delete_message", async ({ chatId, userId, forEveryone }) => {
-      const chat = await Chat.findById(chatId);
-      if (!chat) return socket.emit("delete_error", { error: "Message not found" });
+      console.log("Received delete_message:", { chatId, userId, forEveryone });
+      try {
+        const chat = await Chat.findById(chatId);
+        if (!chat) return socket.emit("delete_error", { error: "Message not found" });
 
-      if (forEveryone && chat.senderId === userId) { // Only sender can delete for everyone
-        chat.content = "This message was deleted";
-        chat.deletedFor = [chat.senderId, chat.receiverId];
-      } else {
-        chat.deletedFor.push(userId);
+        if (forEveryone && chat.senderId.toString() === userId) {
+          chat.content = "This message was deleted";
+          chat.deletedFor = [chat.senderId, chat.receiverId].filter(id => id);
+        } else {
+          chat.deletedFor.push(userId);
+        }
+        await chat.save();
+
+        const senderSocket = onlineUsers.get(chat.senderId.toString());
+        const receiverSocket = onlineUsers.get(chat.receiverId?.toString());
+        if (senderSocket) io.to(senderSocket).emit("message_deleted", {
+          id: chat._id.toString(),
+          senderId: chat.senderId.toString(),
+          receiverId: chat.receiverId?.toString(),
+          content: chat.content,
+          type: chat.type,
+          timestamp: chat.createdAt,
+          status: chat.status,
+          duration: chat.duration,
+        });
+        if (receiverSocket) io.to(receiverSocket).emit("message_deleted", {
+          id: chat._id.toString(),
+          senderId: chat.senderId.toString(),
+          receiverId: chat.receiverId?.toString(),
+          content: chat.content,
+          type: chat.type,
+          timestamp: chat.createdAt,
+          status: chat.status,
+          duration: chat.duration,
+        });
+
+        socket.emit("delete_success", { chatId });
+      } catch (err) {
+        console.error("delete_message error:", err);
+        socket.emit("delete_error", { error: "Failed to delete message" });
       }
-      await chat.save();
-
-      const senderSocket = onlineUsers.get(chat.senderId);
-      const receiverSocket = onlineUsers.get(chat.receiverId);
-      if (senderSocket) io.to(senderSocket).emit("message_deleted", chat);
-      if (receiverSocket) io.to(receiverSocket).emit("message_deleted", chat);
-
-      socket.emit("delete_success", { chatId });
     });
 
-    /** Block user (enhanced notification) */
+    /** Block user */
     socket.on("block_user", async ({ blockerId, blockedId }) => {
-      await Block.create({ blockerId, blockedId });
-      const blockedSocket = onlineUsers.get(blockedId);
-      if (blockedSocket) io.to(blockedSocket).emit("blocked_update", { blockerId, blocked: true });
-      socket.emit("block_success", { blockedId });
+      console.log("Received block_user:", { blockerId, blockedId });
+      try {
+        await Block.create({ blockerId, blockedId });
+        const blockedSocket = onlineUsers.get(blockedId);
+        if (blockedSocket) io.to(blockedSocket).emit("blocked_update", { blockerId, blocked: true });
+        socket.emit("block_success", { blockedId });
+      } catch (err) {
+        console.error("block_user error:", err);
+        socket.emit("block_error", { error: "Failed to block user" });
+      }
     });
 
-    /** Unblock user (enhanced notification) */
+    /** Unblock user */
     socket.on("unblock_user", async ({ blockerId, blockedId }) => {
-      await Block.deleteOne({ blockerId, blockedId });
-      const unblockedSocket = onlineUsers.get(blockedId);
-      if (unblockedSocket) io.to(unblockedSocket).emit("blocked_update", { blockerId, blocked: false });
-      socket.emit("unblock_success", { blockedId });
+      console.log("Received unblock_user:", { blockerId, blockedId });
+      try {
+        await Block.deleteOne({ blockerId, blockedId });
+        const unblockedSocket = onlineUsers.get(blockedId);
+        if (unblockedSocket) io.to(unblockedSocket).emit("blocked_update", { blockerId, blocked: false });
+        socket.emit("unblock_success", { blockedId });
+      } catch (err) {
+        console.error("unblock_user error:", err);
+        socket.emit("unblock_error", { error: "Failed to unblock user" });
+      }
     });
 
-    /** Disconnect (unchanged, but robust) */
+    /** Disconnect */
     socket.on("disconnect", async () => {
       for (const [userId, sockId] of onlineUsers.entries()) {
         if (sockId === socket.id) {
