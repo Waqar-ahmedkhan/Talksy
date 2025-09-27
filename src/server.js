@@ -9,7 +9,6 @@ dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 
-// Create HTTP server using Express app
 const server = http.createServer(app);
 
 // Initialize Socket.IO services with their respective paths

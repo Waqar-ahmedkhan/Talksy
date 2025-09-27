@@ -28,24 +28,10 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'public')));
 // --- End Static File Serving ---
 
-// Routes
-// Serve the main HTML file (e.g., chat-test.html or index.html) when accessing the root URL
-// Express's static middleware will automatically look for index.html inside the 'public' folder
-// when you hit the root route '/'. So this GET handler might be redundant if you name your
-// HTML file index.html. If you name it something else, like chat-test.html, you might need
-// a specific route or rename the file.
-// Example: If your file is chat-test.html, visiting http://localhost:5000/chat-test.html will work.
-// If it's index.html, visiting http://localhost:5000/ will work automatically.
-app.get("/", (req, res) => {
-  // Option 1: Let express.static handle it if you have index.html
-  // res.sendFile(path.join(__dirname, 'public', 'index.html')); // Use if NOT named index.html
-  // Option 2: Redirect to the specific file if it's not index.html
-  // res.redirect('/chat-test.html'); // Use if your file is named chat-test.html
-  // Option 3: Simple message (like your original, but fixed syntax)
-  // res.send("Welcome! Check /chat-test.html"); // Basic message
 
-  // Let's use Option 1 and explicitly send index.html if that's what you'll use:
-  // Make sure you have a file named index.html inside the 'public' folder.
+app.get("/", (req, res) => {
+ 
+
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

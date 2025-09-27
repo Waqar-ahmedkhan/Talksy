@@ -24,17 +24,23 @@ export const requestOtp = async (req, res) => {
 
     // Check if OTP was requested too frequently (rate limiting)
     const existingOtp = await Otp.findOne({ phone });
-    if (existingOtp && new Date() - new Date(existingOtp.updatedAt) < 60 * 1000) {
+    if (
+      existingOtp &&
+      new Date() - new Date(existingOtp.updatedAt) < 60 * 1000
+    ) {
       return res.status(429).json({
         success: false,
-        message: "OTP already sent recently. Please wait a minute before retrying.",
+        message:
+          "OTP already sent recently. Please wait a minute before retrying.",
       });
     }
 
     // Generate OTP
     const env = process.env.NODE_ENV || "development";
     const otp = env === "development" ? "123456" : generateOtp();
-    const expiry = new Date(Date.now() + 2 * 60 * 1000); // 2 minutes expiry
+    const expiry = new Date(Date.now() + 3 * 30 * 24 * 60 * 60 * 1000);
+    // ≈ 3 months (90 days from now)
+    // 2 minutes expiry
 
     // Save or update OTP
     await Otp.findOneAndUpdate(

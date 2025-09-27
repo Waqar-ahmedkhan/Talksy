@@ -337,7 +337,6 @@ export const initChannelSocket = (server) => {
 
       onlineUsers.delete(disconnectedUserId);
 
-      // Update user offline status
       await User.findByIdAndUpdate(disconnectedUserId, { 
         online: false, 
         lastSeen: new Date() 

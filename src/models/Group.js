@@ -2,10 +2,11 @@ import mongoose from "mongoose";
 
 const groupSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, minlength: 3 },
-  channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", required: true },
+  channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel" }, // Optional, no 'required: true'
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  musicUrl: { type: String, default: null }, // URL to group music
+  musicUrl: { type: String, default: null },
+  pictureUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

@@ -245,9 +245,7 @@ import jwt from "jsonwebtoken";
      }
    };
 
-   /**
-    * Get Chat List with Profiles and Latest Messages
-    */
+  
    export const getChatList = async (req, res) => {
      try {
        const myPhone = req.user.phone;
@@ -269,15 +267,14 @@ import jwt from "jsonwebtoken";
          return res.status(404).json({ success: false, error: "Your profile not found" });
        }
 
-       // Find all 1-to-1 chats where I'm involved, excluding deleted messages
        const chats = await Chat.find({
          $and: [
            { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
-           { receiverId: { $ne: null } }, // Ensure 1-to-1 chats only
-           { deletedFor: { $ne: myProfile._id } }, // Exclude messages deleted for me
+           { receiverId: { $ne: null } }, 
+           { deletedFor: { $ne: myProfile._id } }, 
          ],
        })
-         .sort({ pinned: -1, createdAt: -1 }) // Sort by pinned first, then createdAt
+         .sort({ pinned: -1, createdAt: -1 })
          .populate("senderId receiverId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt");
 
        // If no chats exist, return empty list
@@ -291,7 +288,6 @@ import jwt from "jsonwebtoken";
          });
        }
 
-       // Get user data for online status
        const phoneNumbers = [
          ...new Set([
            ...chats.map((chat) => chat.senderId?.phone).filter(Boolean),
@@ -301,10 +297,8 @@ import jwt from "jsonwebtoken";
        const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
        const userMap = new Map(users.map((u) => [u.phone, u]));
 
-       // Group chats by the other participant's _id
        const chatMap = new Map();
        for (const chat of chats) {
-         // Skip if senderId or receiverId is missing
          if (!chat.senderId || !chat.receiverId) {
            console.warn(`Chat ${chat._id} missing senderId or receiverId`);
            continue;
@@ -330,12 +324,10 @@ import jwt from "jsonwebtoken";
            });
          } else {
            const existing = chatMap.get(otherProfileId);
-           // Update latest message and pinned status if this chat is newer
            if (new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)) {
              existing.latestMessage = chat;
              existing.pinned = chat.pinned;
            }
-           // Increment unread count if message is sent/delivered to me
            if (
              chat.receiverId._id.toString() === myProfile._id.toString() &&
              ["sent", "delivered"].includes(chat.status)
@@ -345,7 +337,6 @@ import jwt from "jsonwebtoken";
          }
        }
 
-       // Convert map to array and sort: pinned chats first, then by latest message timestamp
        const chatList = Array.from(chatMap.values())
          .sort((a, b) => {
            if (a.pinned && !b.pinned) return -1;
@@ -354,7 +345,6 @@ import jwt from "jsonwebtoken";
          })
          .slice(skip, skip + limit);
 
-       // Format response
        const formattedChatList = chatList.map((item) => ({
          profile: formatProfile(item.profile, userMap.get(item.profile?.phone)),
          latestMessage: formatChat(item.latestMessage),
