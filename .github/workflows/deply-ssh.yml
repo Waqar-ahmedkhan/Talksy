@@ -3,7 +3,7 @@ name: Deploy Backend to Hostinger
 on:
   push:
     branches:
-      - main   
+      - main
 
 jobs:
   deploy:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy to Hostinger via SSH
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.HOSTINGER_SERVER_IP }}
@@ -21,4 +21,6 @@ jobs:
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           script: |
             cd /var/www/talksy
-            ./deploy.sh
+            git pull origin main
+            npm install
+            pm2 restart talksy || pm2 start src/server.js --name talksy
