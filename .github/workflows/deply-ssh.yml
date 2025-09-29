@@ -19,6 +19,7 @@ jobs:
           host: ${{ secrets.HOSTINGER_SERVER_IP }}
           username: root
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 22
           script: |
             cd /var/www/talksy
             git pull origin main
