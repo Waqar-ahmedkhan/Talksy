@@ -11,16 +11,16 @@ const chatSchema = new mongoose.Schema({
   groupId: { type: mongoose.Schema.Types.ObjectId, ref: "Group" }, // For group messages
   type: {
     type: String,
-    enum: ["text", "voice", "video", "file", "location"],
+    enum: ["text", "voice", "video", "file", "image", "location"], // Added "image"
     default: "text",
   },
   content: { type: String, required: true }, // Text, URL, or JSON string for location
-  fileType: { type: String }, // MIME type for files (e.g., "image/jpeg", "application/pdf")
+  fileType: { type: String }, // MIME type (e.g., "image/jpeg", "video/mp4", "application/pdf")
+  fileName: { type: String }, // Added for document names (e.g., "report.pdf")
   location: {
-    // For location messages
     latitude: { type: Number },
     longitude: { type: Number },
-    name: { type: String }, // Optional place name (e.g., "Central Park")
+    name: { type: String }, // Optional place name
   },
   duration: { type: Number, default: 0 }, // For voice/video duration
   status: {
