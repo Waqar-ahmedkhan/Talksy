@@ -1,9 +1,10 @@
+// src/server.js
 import http from "http";
 import app from "./app.js";
 import { initChatSocket } from "./sockets/chattingSockets.js";
 import { initVideoSocket } from "./sockets/videoCallingSockets.js";
 import { initAudioSocket } from "./sockets/audioCallingSockets.js";
-import { initGroupSocket } from "./sockets/initGroupSocket.js"; // ✅ ADDED
+import { initGroupSocket } from "./sockets/initGroupSocket.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -11,18 +12,17 @@ dotenv.config();
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
+// ✅ Initialize all Socket.IO instances
+// Note: initGroupSocket already sets path: "/group-socket" internally
 const chatIo = initChatSocket(server, { path: "/chat-socket" });
 const videoIo = initVideoSocket(server);
 const audioIo = initAudioSocket(server);
-const groupIo = initGroupSocket(server); // ✅ Your group socket uses internal path "/group-socket"
+const groupIo = initGroupSocket(server); // ✅ Do NOT pass options here — path is set inside
 
-groupIo.on("connection", (socket) => {
-  console.log(`👥 New group client connected: ${socket.id} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-  socket.on("disconnect", () => {
-    console.log(`❌ Group client disconnected: ${socket.id} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-  });
-});
+// ❌ REMOVE THIS BLOCK — it overrides your group socket logic!
+// groupIo.on("connection", (socket) => { ... });
 
+// ✅ Optional: Log connections for OTHER sockets (chat, video, audio)
 chatIo.on("connection", (socket) => {
   console.log(`⚡ New chat client connected: ${socket.id} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
   socket.on("disconnect", () => {
@@ -44,6 +44,7 @@ audioIo.on("connection", (socket) => {
   });
 });
 
+// ✅ Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
 });
