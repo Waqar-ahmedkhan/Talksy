@@ -3,12 +3,14 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import Otp from "../models/Otp.js";
 import { generateOtp } from "../utils/otp.js";
+// import sendSMS from "../services/sms.service.js"; // Comment out for prod bypass
 
 dotenv.config();
 
 /**
  * Request OTP
- * Generates a fixed OTP ("123456") for production/testing and saves it to DB.
+ * Generates fixed OTP ("123456") always (dev/prod bypass), applies rate limiting, saves to DB.
+ * In prod: Logs "SMS sent" but skips real SMS for testing.
  */
 export const requestOtp = async (req, res) => {
   try {
@@ -23,9 +25,21 @@ export const requestOtp = async (req, res) => {
       });
     }
 
-    // Always use fixed OTP for production/testing
+    // Rate limiting: Check if OTP requested too frequently (1 per minute per phone)
+    const existingOtp = await Otp.findOne({ phone });
+    if (
+      existingOtp &&
+      new Date() - new Date(existingOtp.updatedAt) < 60 * 1000 // 1 min cooldown
+    ) {
+      return res.status(429).json({
+        success: false,
+        message: "OTP already sent recently. Please wait a minute before retrying.",
+      });
+    }
+
+    // Always use fixed OTP "123456" (prod bypass for testing—no random/SMS)
     const otp = "123456";
-    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 min expiry, matching schema default
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 min expiry
 
     // Save or update OTP in DB (upsert)
     await Otp.findOneAndUpdate(
@@ -34,8 +48,16 @@ export const requestOtp = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Optional: Hide OTP in production response
-    const responseOtp = process.env.NODE_ENV === "development" ? "******" : otp;
+    // Prod bypass: Log instead of sending SMS
+    const env = process.env.NODE_ENV || "development";
+    if (env === "production") {
+      console.log(`[PROD BYPASS] "SMS" sent to ${phone} with OTP: ${otp} (no real SMS)`);
+    } else {
+      console.log(`[DEV] OTP for ${phone}: ${otp}`);
+    }
+
+    // Always hide OTP in prod response
+    const responseOtp = env === "production" ? "******" : otp;
 
     return res.json({
       success: true,
@@ -51,7 +73,7 @@ export const requestOtp = async (req, res) => {
 
 /**
  * Verify OTP & Issue JWT Token
- * Fetches from DB, validates, checks expiry/attempts, and generates token on success.
+ * Fetches from DB, validates "123456", checks expiry/attempts, and generates token on success.
  */
 export const verifyOtp = async (req, res) => {
   try {
@@ -77,22 +99,21 @@ export const verifyOtp = async (req, res) => {
 
     // Check if expired
     if (storedOtp.isExpired()) {
-      // Optional: Delete expired OTP
-      await Otp.findOneAndDelete({ phone });
+      await Otp.findOneAndDelete({ phone }); // Clean up
       return res.status(400).json({ success: false, message: "OTP has expired. Please request a new one." });
     }
 
     // Normalize input OTP (handles number vs string + whitespace)
     const normalizedOtp = String(otp).trim();
 
-    // Check match (storedOtp.otp is already a string from schema)
+    // Check match (storedOtp.otp is always "123456")
     if (normalizedOtp !== storedOtp.otp) {
       // Increment attempts on failure
       storedOtp.attempts += 1;
       await storedOtp.save();
 
-      // Optional: Lock after 3 attempts
-      if (storedOtp.attempts >= 3) {
+      // Lock after 5 attempts
+      if (storedOtp.attempts >= 5) {
         await Otp.findOneAndDelete({ phone });
         return res.status(400).json({ success: false, message: "Too many attempts. Please request a new OTP." });
       }
@@ -112,14 +133,14 @@ export const verifyOtp = async (req, res) => {
       expiresIn: "1h",
     });
 
-    // Optional: Delete OTP after successful verification (prevents reuse)
-    // await Otp.findOneAndDelete({ phone });
+    // Delete OTP after success (prevents reuse)
+    await Otp.findOneAndDelete({ phone });
 
     return res.json({
       success: true,
       message: "OTP verified successfully",
       token,
-      phone, // Optional: Echo back for client
+      phone,
     });
   } catch (err) {
     console.error("verifyOtp error:", err);
