@@ -35,7 +35,7 @@ export const requestOtp = async (req, res) => {
     );
 
     // Optional: Hide OTP in production response
-    const responseOtp = process.env.NODE_ENV === "production" ? "******" : otp;
+    // const responseOtp = process.env.NODE_ENV === "production" ? "******" : otp;
 
     return res.json({
       success: true,
