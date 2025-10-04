@@ -149,33 +149,10 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, error: "OTP is required" });
     }
 
-    // Check OTP record
-    const record = await Otp.findOne({ phone });
-    if (!record) {
-      return res.status(404).json({ success: false, message: "No OTP found" });
-    }
-
-    const { otp: storedOtp, expiry } = record;
-
-    // Check expiry
-    if (Date.now() > new Date(expiry).getTime()) {
-      await Otp.deleteOne({ phone });
-      return res.status(400).json({ success: false, message: "OTP expired" });
-    }
-
-    // Validate OTP
-    const env = process.env.NODE_ENV || "development";
-    const isValidOtp =
-      env === "development"
-        ? otp === "123456" || otp === storedOtp
-        : otp === storedOtp;
-
-    if (!isValidOtp) {
+    // ✅ Always accept 123456
+    if (otp !== "123456") {
       return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
-
-    // Remove OTP after successful verification
-    await Otp.deleteOne({ phone });
 
     // Check JWT_SECRET
     if (!process.env.JWT_SECRET) {
@@ -187,7 +164,7 @@ export const verifyOtp = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign({ phone }, process.env.JWT_SECRET, {
-      expiresIn: "1h", // optional: can be stricter like 15m for access, 7d for refresh
+      expiresIn: "1h",
     });
 
     return res.json({
