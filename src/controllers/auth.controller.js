@@ -21,24 +21,12 @@ export const requestOtp = async (req, res) => {
       });
     }
 
-    // ✅ Always use fixed OTP
-    const otp = "123456";
-
-    // Expiry: 2 minutes (optional)
-    const expiry = new Date(Date.now() + 2 * 60 * 1000);
-
-    // Save or update OTP in DB
-    await Otp.findOneAndUpdate(
-      { phone },
-      { otp, expiry },
-      { upsert: true, new: true }
-    );
-
+    // ✅ Always return fixed OTP without saving in DB
     return res.json({
       success: true,
       message: "OTP generated successfully",
       phone,
-      otp, // always return 123456
+      otp: "123456",
     });
   } catch (err) {
     console.error("requestOtp error:", err);
