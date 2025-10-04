@@ -118,7 +118,7 @@ export const verifyOtp = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign({ phone }, process.env.JWT_SECRET, {
-      expiresIn: "1h", // optional: can be stricter like 15m for access, 7d for refresh
+      expiresIn: "30d", // 30 days ~ 1 month
     });
 
     return res.json({
