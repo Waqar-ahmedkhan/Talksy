@@ -6,6 +6,8 @@ import { generateOtp } from "../utils/otp.js";
 
 dotenv.config();
 
+
+
 export const requestOtp = async (req, res) => {
   try {
     const { phone } = req.body;
@@ -36,13 +38,51 @@ export const requestOtp = async (req, res) => {
       success: true,
       message: "OTP generated successfully",
       phone,
-      otp, // ✅ always return 123456
+      otp, // always return 123456
     });
   } catch (err) {
     console.error("requestOtp error:", err);
     return res.status(500).json({ success: false, error: "Server error" });
   }
 };
+
+// export const requestOtp = async (req, res) => {
+//   try {
+//     const { phone } = req.body;
+
+//     // Strict validation for Pakistan phone numbers
+//     const phoneRegex = /^\+92[0-9]{10}$/;
+//     if (!phone || !phoneRegex.test(phone)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: "Valid Pakistan phone number is required (e.g., +923001234567)",
+//       });
+//     }
+
+//     // ✅ Always use fixed OTP
+//     const otp = "123456";
+
+//     // Expiry: 2 minutes (optional)
+//     const expiry = new Date(Date.now() + 2 * 60 * 1000);
+
+//     // Save or update OTP in DB
+//     await Otp.findOneAndUpdate(
+//       { phone },
+//       { otp, expiry },
+//       { upsert: true, new: true }
+//     );
+
+//     return res.json({
+//       success: true,
+//       message: "OTP generated successfully",
+//       phone,
+//       otp, // ✅ always return 123456
+//     });
+//   } catch (err) {
+//     console.error("requestOtp error:", err);
+//     return res.status(500).json({ success: false, error: "Server error" });
+//   }
+// };
 
 /**
  * Request OTP
