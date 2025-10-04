@@ -12,14 +12,22 @@ export const initGroupSocket = (server) => {
   });
 
   const onlineUsers = new Map();
-  const typingUsers = new Map(); 
+  const typingUsers = new Map();
 
   io.on("connection", (socket) => {
-    console.log(`[GROUP_SOCKET] User connected: socketId=${socket.id}, time=${new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" })}`);
+    console.log(
+      `[GROUP_SOCKET] User connected: socketId=${
+        socket.id
+      }, time=${new Date().toLocaleString("en-PK", {
+        timeZone: "Asia/Karachi",
+      })}`
+    );
 
     /** User joins group chatting system */
     socket.on("join_groups", async (userId) => {
-      console.log(`[JOIN_GROUPS] Attempting to join: userId=${userId}, socketId=${socket.id}`);
+      console.log(
+        `[JOIN_GROUPS] Attempting to join: userId=${userId}, socketId=${socket.id}`
+      );
 
       if (!userId || !isValidObjectId(userId)) {
         console.error(`[JOIN_GROUPS_ERROR] Invalid userId: ${userId}`);
@@ -39,89 +47,110 @@ export const initGroupSocket = (server) => {
           { new: true }
         );
         if (!user) {
-          console.error(`[JOIN_GROUPS_ERROR] User not found: userId=${userIdStr}`);
+          console.error(
+            `[JOIN_GROUPS_ERROR] User not found: userId=${userIdStr}`
+          );
           socket.emit("error", { message: "User not found" });
           socket.disconnect();
           return;
         }
-        console.log(`[JOIN_GROUPS] User updated: userId=${userIdStr}, online=true`);
+        console.log(
+          `[JOIN_GROUPS] User updated: userId=${userIdStr}, online=true`
+        );
 
         const userGroups = await Group.find({ members: userIdStr }).lean();
-        console.log(`[JOIN_GROUPS] Found ${userGroups.length} groups for userId=${userIdStr}`);
+        console.log(
+          `[JOIN_GROUPS] Found ${userGroups.length} groups for userId=${userIdStr}`
+        );
 
         const groupRooms = userGroups.map((gr) => `group_${gr._id}`);
         if (groupRooms.length > 0) {
           socket.join(groupRooms);
-          console.log(`[JOIN_GROUPS] User joined rooms: ${groupRooms.join(", ")}`);
+          console.log(
+            `[JOIN_GROUPS] User joined rooms: ${groupRooms.join(", ")}`
+          );
 
           userGroups.forEach((group) => {
             if (group.musicUrl) {
-              socket.emit("play_group_music", { groupId: group._id, musicUrl: group.musicUrl });
-              console.log(`[JOIN_GROUPS] Emitted play_group_music: groupId=${group._id}, musicUrl=${group.musicUrl}`);
+              socket.emit("play_group_music", {
+                groupId: group._id,
+                musicUrl: group.musicUrl,
+              });
+              console.log(
+                `[JOIN_GROUPS] Emitted play_group_music: groupId=${group._id}, musicUrl=${group.musicUrl}`
+              );
             }
           });
         }
 
-        console.log(`[JOIN_GROUPS_SUCCESS] User ${userIdStr} joined group chatting system`);
+        console.log(
+          `[JOIN_GROUPS_SUCCESS] User ${userIdStr} joined group chatting system`
+        );
       } catch (error) {
-        console.error(`[JOIN_GROUPS_ERROR] Failed for userId=${userIdStr}: ${error.message}`);
-        socket.emit("error", { message: "Failed to join groups", error: error.message });
+        console.error(
+          `[JOIN_GROUPS_ERROR] Failed for userId=${userIdStr}: ${error.message}`
+        );
+        socket.emit("error", {
+          message: "Failed to join groups",
+          error: error.message,
+        });
         socket.disconnect();
       }
     });
-
-    /** Create a new group with optional channel, music, and picture */
     socket.on("create_group", async (data, callback) => {
-      console.log(`[CREATE_GROUP] Attempting to create group: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[CREATE_GROUP] Attempting to create group (NO AUTH): data=${JSON.stringify(
+          data
+        )}`
+      );
 
       try {
         const { name, channelId, members = [], musicUrl, pictureUrl } = data;
-        const userId = socket.userId;
 
-        if (!userId) {
-          console.error(`[CREATE_GROUP_ERROR] Not authenticated: socketId=${socket.id}`);
-          return callback({ success: false, message: "Not authenticated" });
-        }
+        // 🔥 Hardcoded creator ID for testing — no auth, no socket.userId
+        const userId = "68e12bcbdee26bec7660c64c"; // any valid ObjectId string
+
         if (!name || name.trim().length < 3) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid name: ${name}`);
-          return callback({ success: false, message: "Group name must be at least 3 characters" });
+          return callback({
+            success: false,
+            message: "Group name must be at least 3 characters",
+          });
         }
+
+        if (channelId && !isValidObjectId(channelId)) {
+          return callback({ success: false, message: "Invalid channel ID" });
+        }
+
         if (channelId) {
-          if (!isValidObjectId(channelId)) {
-            console.error(`[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}`);
-            return callback({ success: false, message: "Invalid channel ID" });
-          }
           const channel = await Channel.findById(channelId);
           if (!channel) {
-            console.error(`[CREATE_GROUP_ERROR] Channel not found: channelId=${channelId}`);
             return callback({ success: false, message: "Channel not found" });
           }
-          console.log(`[CREATE_GROUP] Valid channel provided: channelId=${channelId}`);
-        } else {
-          console.log(`[CREATE_GROUP] No channel provided, creating standalone group`);
         }
+
         if (musicUrl && !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(musicUrl)) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}`);
-          return callback({ success: false, message: "Invalid music URL format" });
+          return callback({
+            success: false,
+            message: "Invalid music URL format",
+          });
         }
-        if (pictureUrl && !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}`);
-          return callback({ success: false, message: "Invalid picture URL format" });
+        if (
+          pictureUrl &&
+          !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)
+        ) {
+          return callback({
+            success: false,
+            message: "Invalid picture URL format",
+          });
         }
         if (!members.every(isValidObjectId)) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid member IDs: ${members}`);
           return callback({ success: false, message: "Invalid member IDs" });
         }
 
-        const validMembers = await User.find({ _id: { $in: members } });
-        if (validMembers.length !== members.length) {
-          console.error(`[CREATE_GROUP_ERROR] One or more members not found: members=${members}`);
-          return callback({ success: false, message: "One or more members not found" });
-        }
-
+        // 🔥 Skip member existence check — allow any ObjectId
         const group = new Group({
           name,
-          channelId: channelId || null, // Optional: Set to null if not provided
+          channelId: channelId || null,
           createdBy: userId,
           members: [...new Set([userId, ...members])],
           musicUrl: musicUrl || null,
@@ -129,132 +158,264 @@ export const initGroupSocket = (server) => {
         });
 
         await group.save();
-        console.log(`[CREATE_GROUP] Group created: groupId=${group._id}, name=${group.name}, channelId=${group.channelId || "none"}`);
+        console.log(`[CREATE_GROUP] Group created: ${group._id}`);
 
+        // Optional: join room (won't notify others without onlineUsers map)
         const groupRoom = `group_${group._id}`;
         socket.join(groupRoom);
-        console.log(`[CREATE_GROUP] Creator joined room: groupId=${group._id}, socketId=${socket.id}`);
 
-        group.members.forEach((memberId) => {
-          const memberSocketId = onlineUsers.get(memberId.toString());
-          if (memberSocketId) {
-            io.to(memberSocketId).emit("group_created", { group });
-            console.log(`[CREATE_GROUP] Notified member: memberId=${memberId}, groupId=${group._id}`);
-            if (group.musicUrl) {
-              io.to(memberSocketId).emit("play_group_music", { groupId: group._id, musicUrl: group.musicUrl });
-              console.log(`[CREATE_GROUP] Emitted play_group_music to memberId=${memberId}`);
-            }
-          }
-        });
-
-        callback({ success: true, group });
-        console.log(`[CREATE_GROUP_SUCCESS] Group creation successful: groupId=${group._id}`);
+        callback({ success: true, group: group.toObject() });
+        console.log(`[CREATE_GROUP_SUCCESS] Group created successfully`);
       } catch (error) {
-        console.error(`[CREATE_GROUP_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(`[CREATE_GROUP_ERROR] ${error.message}`);
+        callback({ success: false, message: "Server error" });
       }
     });
+    /** Create a new group with optional channel, music, and picture */
+    // socket.on("create_group", async (data, callback) => {
+    //   console.log(`[CREATE_GROUP] Attempting to create group: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+
+    //   try {
+    //     const { name, channelId, members = [], musicUrl, pictureUrl } = data;
+    //     const userId = socket.userId;
+
+    //     if (!userId) {
+    //       console.error(`[CREATE_GROUP_ERROR] Not authenticated: socketId=${socket.id}`);
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+    //     if (!name || name.trim().length < 3) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid name: ${name}`);
+    //       return callback({ success: false, message: "Group name must be at least 3 characters" });
+    //     }
+    //     if (channelId) {
+    //       if (!isValidObjectId(channelId)) {
+    //         console.error(`[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}`);
+    //         return callback({ success: false, message: "Invalid channel ID" });
+    //       }
+    //       const channel = await Channel.findById(channelId);
+    //       if (!channel) {
+    //         console.error(`[CREATE_GROUP_ERROR] Channel not found: channelId=${channelId}`);
+    //         return callback({ success: false, message: "Channel not found" });
+    //       }
+    //       console.log(`[CREATE_GROUP] Valid channel provided: channelId=${channelId}`);
+    //     } else {
+    //       console.log(`[CREATE_GROUP] No channel provided, creating standalone group`);
+    //     }
+    //     if (musicUrl && !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(musicUrl)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}`);
+    //       return callback({ success: false, message: "Invalid music URL format" });
+    //     }
+    //     if (pictureUrl && !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}`);
+    //       return callback({ success: false, message: "Invalid picture URL format" });
+    //     }
+    //     if (!members.every(isValidObjectId)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid member IDs: ${members}`);
+    //       return callback({ success: false, message: "Invalid member IDs" });
+    //     }
+
+    //     const validMembers = await User.find({ _id: { $in: members } });
+    //     if (validMembers.length !== members.length) {
+    //       console.error(`[CREATE_GROUP_ERROR] One or more members not found: members=${members}`);
+    //       return callback({ success: false, message: "One or more members not found" });
+    //     }
+
+    //     const group = new Group({
+    //       name,
+    //       channelId: channelId || null, // Optional: Set to null if not provided
+    //       createdBy: userId,
+    //       members: [...new Set([userId, ...members])],
+    //       musicUrl: musicUrl || null,
+    //       pictureUrl: pictureUrl || null,
+    //     });
+
+    //     await group.save();
+    //     console.log(`[CREATE_GROUP] Group created: groupId=${group._id}, name=${group.name}, channelId=${group.channelId || "none"}`);
+
+    //     const groupRoom = `group_${group._id}`;
+    //     socket.join(groupRoom);
+    //     console.log(`[CREATE_GROUP] Creator joined room: groupId=${group._id}, socketId=${socket.id}`);
+
+    //     group.members.forEach((memberId) => {
+    //       const memberSocketId = onlineUsers.get(memberId.toString());
+    //       if (memberSocketId) {
+    //         io.to(memberSocketId).emit("group_created", { group });
+    //         console.log(`[CREATE_GROUP] Notified member: memberId=${memberId}, groupId=${group._id}`);
+    //         if (group.musicUrl) {
+    //           io.to(memberSocketId).emit("play_group_music", { groupId: group._id, musicUrl: group.musicUrl });
+    //           console.log(`[CREATE_GROUP] Emitted play_group_music to memberId=${memberId}`);
+    //         }
+    //       }
+    //     });
+
+    //     callback({ success: true, group });
+    //     console.log(`[CREATE_GROUP_SUCCESS] Group creation successful: groupId=${group._id}`);
+    //   } catch (error) {
+    //     console.error(`[CREATE_GROUP_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
+    //     callback({ success: false, message: "Server error", error: error.message });
+    //   }
+    // });
 
     /** Update group picture */
     socket.on("update_group_picture", async (data, callback) => {
-      console.log(`[UPDATE_GROUP_PICTURE] Attempting to update picture: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[UPDATE_GROUP_PICTURE] Attempting to update picture: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { groupId, pictureUrl } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(`[UPDATE_GROUP_PICTURE_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[UPDATE_GROUP_PICTURE_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId)) {
-          console.error(`[UPDATE_GROUP_PICTURE_ERROR] Invalid groupId: ${groupId}`);
+          console.error(
+            `[UPDATE_GROUP_PICTURE_ERROR] Invalid groupId: ${groupId}`
+          );
           return callback({ success: false, message: "Invalid group ID" });
         }
-        if (pictureUrl && !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)) {
-          console.error(`[UPDATE_GROUP_PICTURE_ERROR] Invalid pictureUrl: ${pictureUrl}`);
-          return callback({ success: false, message: "Invalid picture URL format" });
+        if (
+          pictureUrl &&
+          !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)
+        ) {
+          console.error(
+            `[UPDATE_GROUP_PICTURE_ERROR] Invalid pictureUrl: ${pictureUrl}`
+          );
+          return callback({
+            success: false,
+            message: "Invalid picture URL format",
+          });
         }
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[UPDATE_GROUP_PICTURE_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[UPDATE_GROUP_PICTURE_ERROR] Group not found: groupId=${groupId}`
+          );
           return callback({ success: false, message: "Group not found" });
         }
 
         if (group.createdBy.toString() !== userId) {
-          console.error(`[UPDATE_GROUP_PICTURE_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`);
+          console.error(
+            `[UPDATE_GROUP_PICTURE_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`
+          );
           return callback({ success: false, message: "Not authorized" });
         }
 
         group.pictureUrl = pictureUrl || null;
         group.updatedAt = Date.now();
         await group.save();
-        console.log(`[UPDATE_GROUP_PICTURE] Updated picture: groupId=${groupId}, pictureUrl=${pictureUrl || "null"}`);
+        console.log(
+          `[UPDATE_GROUP_PICTURE] Updated picture: groupId=${groupId}, pictureUrl=${
+            pictureUrl || "null"
+          }`
+        );
 
         const groupRoom = `group_${groupId}`;
         group.members.forEach((memberId) => {
           const memberSocketId = onlineUsers.get(memberId.toString());
           if (memberSocketId) {
-            io.to(memberSocketId).emit("group_picture_updated", { groupId, pictureUrl });
-            console.log(`[UPDATE_GROUP_PICTURE] Notified member: memberId=${memberId}, groupId=${groupId}`);
+            io.to(memberSocketId).emit("group_picture_updated", {
+              groupId,
+              pictureUrl,
+            });
+            console.log(
+              `[UPDATE_GROUP_PICTURE] Notified member: memberId=${memberId}, groupId=${groupId}`
+            );
           }
         });
 
         callback({ success: true, group });
-        console.log(`[UPDATE_GROUP_PICTURE_SUCCESS] Group picture updated: groupId=${groupId}`);
+        console.log(
+          `[UPDATE_GROUP_PICTURE_SUCCESS] Group picture updated: groupId=${groupId}`
+        );
       } catch (error) {
-        console.error(`[UPDATE_GROUP_PICTURE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[UPDATE_GROUP_PICTURE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Add members to group */
     socket.on("add_group_members", async (data, callback) => {
-      console.log(`[ADD_GROUP_MEMBERS] Attempting to add members: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[ADD_GROUP_MEMBERS] Attempting to add members: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { groupId, memberIds } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(`[ADD_GROUP_MEMBERS_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[ADD_GROUP_MEMBERS_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId)) {
-          console.error(`[ADD_GROUP_MEMBERS_ERROR] Invalid groupId: ${groupId}`);
+          console.error(
+            `[ADD_GROUP_MEMBERS_ERROR] Invalid groupId: ${groupId}`
+          );
           return callback({ success: false, message: "Invalid group ID" });
         }
         if (!memberIds.every(isValidObjectId)) {
-          console.error(`[ADD_GROUP_MEMBERS_ERROR] Invalid memberIds: ${memberIds}`);
+          console.error(
+            `[ADD_GROUP_MEMBERS_ERROR] Invalid memberIds: ${memberIds}`
+          );
           return callback({ success: false, message: "Invalid member IDs" });
         }
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[ADD_GROUP_MEMBERS_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[ADD_GROUP_MEMBERS_ERROR] Group not found: groupId=${groupId}`
+          );
           return callback({ success: false, message: "Group not found" });
         }
 
         if (group.createdBy.toString() !== userId) {
-          console.error(`[ADD_GROUP_MEMBERS_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`);
+          console.error(
+            `[ADD_GROUP_MEMBERS_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`
+          );
           return callback({ success: false, message: "Not authorized" });
         }
 
         const validMembers = await User.find({ _id: { $in: memberIds } });
         if (validMembers.length !== memberIds.length) {
-          console.error(`[ADD_GROUP_MEMBERS_ERROR] One or more members not found: memberIds=${memberIds}`);
-          return callback({ success: false, message: "One or more members not found" });
+          console.error(
+            `[ADD_GROUP_MEMBERS_ERROR] One or more members not found: memberIds=${memberIds}`
+          );
+          return callback({
+            success: false,
+            message: "One or more members not found",
+          });
         }
 
         const existingMembers = group.members.map((id) => id.toString());
-        const newMembers = memberIds.filter((id) => !existingMembers.includes(id));
+        const newMembers = memberIds.filter(
+          (id) => !existingMembers.includes(id)
+        );
 
         if (newMembers.length > 0) {
           group.members.push(...newMembers);
           group.updatedAt = Date.now();
           await group.save();
-          console.log(`[ADD_GROUP_MEMBERS] Added ${newMembers.length} members to groupId=${groupId}`);
+          console.log(
+            `[ADD_GROUP_MEMBERS] Added ${newMembers.length} members to groupId=${groupId}`
+          );
 
           const groupRoom = `group_${groupId}`;
           newMembers.forEach((memberId) => {
@@ -262,10 +423,17 @@ export const initGroupSocket = (server) => {
             if (memberSocketId) {
               io.to(memberSocketId).emit("added_to_group", { group });
               io.to(memberSocketId).emit("auto_join_group", { groupId });
-              console.log(`[ADD_GROUP_MEMBERS] Notified new member: memberId=${memberId}, groupId=${groupId}`);
+              console.log(
+                `[ADD_GROUP_MEMBERS] Notified new member: memberId=${memberId}, groupId=${groupId}`
+              );
               if (group.musicUrl) {
-                io.to(memberSocketId).emit("play_group_music", { groupId, musicUrl: group.musicUrl });
-                console.log(`[ADD_GROUP_MEMBERS] Emitted play_group_music to memberId=${memberId}`);
+                io.to(memberSocketId).emit("play_group_music", {
+                  groupId,
+                  musicUrl: group.musicUrl,
+                });
+                console.log(
+                  `[ADD_GROUP_MEMBERS] Emitted play_group_music to memberId=${memberId}`
+                );
               }
             }
           });
@@ -273,115 +441,187 @@ export const initGroupSocket = (server) => {
           group.members.forEach((memberId) => {
             const memberSocketId = onlineUsers.get(memberId.toString());
             if (memberSocketId && memberId.toString() !== userId) {
-              io.to(memberSocketId).emit("group_members_added", { groupId, newMembers });
-              console.log(`[ADD_GROUP_MEMBERS] Notified existing member: memberId=${memberId}, groupId=${groupId}`);
+              io.to(memberSocketId).emit("group_members_added", {
+                groupId,
+                newMembers,
+              });
+              console.log(
+                `[ADD_GROUP_MEMBERS] Notified existing member: memberId=${memberId}, groupId=${groupId}`
+              );
             }
           });
         } else {
-          console.log(`[ADD_GROUP_MEMBERS] No new members to add: groupId=${groupId}`);
+          console.log(
+            `[ADD_GROUP_MEMBERS] No new members to add: groupId=${groupId}`
+          );
         }
 
         callback({ success: true, group });
-        console.log(`[ADD_GROUP_MEMBERS_SUCCESS] Members added to groupId=${groupId}`);
+        console.log(
+          `[ADD_GROUP_MEMBERS_SUCCESS] Members added to groupId=${groupId}`
+        );
       } catch (error) {
-        console.error(`[ADD_GROUP_MEMBERS_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[ADD_GROUP_MEMBERS_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Remove member from group */
     socket.on("remove_group_member", async (data, callback) => {
-      console.log(`[REMOVE_GROUP_MEMBER] Attempting to remove member: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[REMOVE_GROUP_MEMBER] Attempting to remove member: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { groupId, memberId } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(`[REMOVE_GROUP_MEMBER_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[REMOVE_GROUP_MEMBER_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId) || !isValidObjectId(memberId)) {
-          console.error(`[REMOVE_GROUP_MEMBER_ERROR] Invalid IDs: groupId=${groupId}, memberId=${memberId}`);
-          return callback({ success: false, message: "Invalid group or member ID" });
+          console.error(
+            `[REMOVE_GROUP_MEMBER_ERROR] Invalid IDs: groupId=${groupId}, memberId=${memberId}`
+          );
+          return callback({
+            success: false,
+            message: "Invalid group or member ID",
+          });
         }
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[REMOVE_GROUP_MEMBER_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[REMOVE_GROUP_MEMBER_ERROR] Group not found: groupId=${groupId}`
+          );
           return callback({ success: false, message: "Group not found" });
         }
 
         if (group.createdBy.toString() !== userId) {
-          console.error(`[REMOVE_GROUP_MEMBER_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`);
+          console.error(
+            `[REMOVE_GROUP_MEMBER_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`
+          );
           return callback({ success: false, message: "Not authorized" });
         }
 
         if (memberId === group.createdBy.toString()) {
-          console.error(`[REMOVE_GROUP_MEMBER_ERROR] Cannot remove creator: memberId=${memberId}`);
-          return callback({ success: false, message: "Cannot remove group creator" });
+          console.error(
+            `[REMOVE_GROUP_MEMBER_ERROR] Cannot remove creator: memberId=${memberId}`
+          );
+          return callback({
+            success: false,
+            message: "Cannot remove group creator",
+          });
         }
 
-        group.members = group.members.filter((id) => id.toString() !== memberId);
+        group.members = group.members.filter(
+          (id) => id.toString() !== memberId
+        );
         group.updatedAt = Date.now();
         await group.save();
-        console.log(`[REMOVE_GROUP_MEMBER] Removed member: memberId=${memberId}, groupId=${groupId}`);
+        console.log(
+          `[REMOVE_GROUP_MEMBER] Removed member: memberId=${memberId}, groupId=${groupId}`
+        );
 
         const removedSocketId = onlineUsers.get(memberId);
         if (removedSocketId) {
           io.to(removedSocketId).emit("removed_from_group", { groupId });
           io.to(removedSocketId).emit("stop_group_music", { groupId });
           io.sockets.sockets.get(removedSocketId)?.leave(`group_${groupId}`);
-          console.log(`[REMOVE_GROUP_MEMBER] Notified removed member: memberId=${memberId}, groupId=${groupId}`);
+          console.log(
+            `[REMOVE_GROUP_MEMBER] Notified removed member: memberId=${memberId}, groupId=${groupId}`
+          );
         }
 
         group.members.forEach((memberId) => {
           const memberSocketId = onlineUsers.get(memberId.toString());
           if (memberSocketId) {
-            io.to(memberSocketId).emit("group_member_removed", { groupId, removedMember: memberId });
-            console.log(`[REMOVE_GROUP_MEMBER] Notified member: memberId=${memberId}, groupId=${groupId}`);
+            io.to(memberSocketId).emit("group_member_removed", {
+              groupId,
+              removedMember: memberId,
+            });
+            console.log(
+              `[REMOVE_GROUP_MEMBER] Notified member: memberId=${memberId}, groupId=${groupId}`
+            );
           }
         });
 
         callback({ success: true, group });
-        console.log(`[REMOVE_GROUP_MEMBER_SUCCESS] Member removed from groupId=${groupId}`);
+        console.log(
+          `[REMOVE_GROUP_MEMBER_SUCCESS] Member removed from groupId=${groupId}`
+        );
       } catch (error) {
-        console.error(`[REMOVE_GROUP_MEMBER_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[REMOVE_GROUP_MEMBER_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Send text message */
     socket.on("send_text_message", async (data, callback) => {
-      console.log(`[SEND_TEXT_MESSAGE] Attempting to send message: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[SEND_TEXT_MESSAGE] Attempting to send message: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { groupId, content } = data;
         const senderId = socket.userId;
 
         if (!senderId) {
-          console.error(`[SEND_TEXT_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId)) {
-          console.error(`[SEND_TEXT_MESSAGE_ERROR] Invalid groupId: ${groupId}`);
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Invalid groupId: ${groupId}`
+          );
           return callback({ success: false, message: "Invalid group ID" });
         }
         if (!content || content.trim() === "") {
           console.error(`[SEND_TEXT_MESSAGE_ERROR] Empty content`);
-          return callback({ success: false, message: "Message content cannot be empty" });
+          return callback({
+            success: false,
+            message: "Message content cannot be empty",
+          });
         }
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${groupId}`
+          );
           return callback({ success: false, message: "Group not found" });
         }
 
         const isMember = group.members.some((id) => id.toString() === senderId);
         if (!isMember) {
-          console.error(`[SEND_TEXT_MESSAGE_ERROR] Not authorized: userId=${senderId}, groupId=${groupId}`);
-          return callback({ success: false, message: "Not authorized to send message" });
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Not authorized: userId=${senderId}, groupId=${groupId}`
+          );
+          return callback({
+            success: false,
+            message: "Not authorized to send message",
+          });
         }
 
         const chat = new Chat({
@@ -394,11 +634,15 @@ export const initGroupSocket = (server) => {
 
         await chat.save();
         await chat.populate("senderId", "displayName");
-        console.log(`[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${groupId}`);
+        console.log(
+          `[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${groupId}`
+        );
 
         const groupRoom = `group_${groupId}`;
         io.to(groupRoom).emit("new_text_message", { message: chat });
-        console.log(`[SEND_TEXT_MESSAGE] Emitted new_text_message to groupId=${groupId}`);
+        console.log(
+          `[SEND_TEXT_MESSAGE] Emitted new_text_message to groupId=${groupId}`
+        );
 
         setTimeout(async () => {
           const updatedChat = await Chat.findByIdAndUpdate(
@@ -406,53 +650,88 @@ export const initGroupSocket = (server) => {
             { status: "delivered" },
             { new: true }
           );
-          io.to(groupRoom).emit("message_status_update", { messageId: chat._id, status: "delivered" });
-          console.log(`[SEND_TEXT_MESSAGE] Updated status to delivered: messageId=${chat._id}`);
+          io.to(groupRoom).emit("message_status_update", {
+            messageId: chat._id,
+            status: "delivered",
+          });
+          console.log(
+            `[SEND_TEXT_MESSAGE] Updated status to delivered: messageId=${chat._id}`
+          );
         }, 100);
 
         callback({ success: true, message: chat });
-        console.log(`[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${groupId}`);
+        console.log(
+          `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${groupId}`
+        );
       } catch (error) {
-        console.error(`[SEND_TEXT_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[SEND_TEXT_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Send voice message */
     socket.on("send_voice_message", async (data, callback) => {
-      console.log(`[SEND_VOICE_MESSAGE] Attempting to send voice message: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[SEND_VOICE_MESSAGE] Attempting to send voice message: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { groupId, voiceUrl, duration } = data;
         const senderId = socket.userId;
 
         if (!senderId) {
-          console.error(`[SEND_VOICE_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[SEND_VOICE_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId)) {
-          console.error(`[SEND_VOICE_MESSAGE_ERROR] Invalid groupId: ${groupId}`);
+          console.error(
+            `[SEND_VOICE_MESSAGE_ERROR] Invalid groupId: ${groupId}`
+          );
           return callback({ success: false, message: "Invalid group ID" });
         }
         if (!voiceUrl || !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(voiceUrl)) {
-          console.error(`[SEND_VOICE_MESSAGE_ERROR] Invalid voiceUrl: ${voiceUrl}`);
+          console.error(
+            `[SEND_VOICE_MESSAGE_ERROR] Invalid voiceUrl: ${voiceUrl}`
+          );
           return callback({ success: false, message: "Invalid voice URL" });
         }
         if (duration > 180) {
-          console.error(`[SEND_VOICE_MESSAGE_ERROR] Voice message too long: duration=${duration}`);
-          return callback({ success: false, message: "Voice message too long (max 3 minutes)" });
+          console.error(
+            `[SEND_VOICE_MESSAGE_ERROR] Voice message too long: duration=${duration}`
+          );
+          return callback({
+            success: false,
+            message: "Voice message too long (max 3 minutes)",
+          });
         }
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${groupId}`
+          );
           return callback({ success: false, message: "Group not found" });
         }
 
         const isMember = group.members.some((id) => id.toString() === senderId);
         if (!isMember) {
-          console.error(`[SEND_VOICE_MESSAGE_ERROR] Not authorized: userId=${senderId}, groupId=${groupId}`);
-          return callback({ success: false, message: "Not authorized to send message" });
+          console.error(
+            `[SEND_VOICE_MESSAGE_ERROR] Not authorized: userId=${senderId}, groupId=${groupId}`
+          );
+          return callback({
+            success: false,
+            message: "Not authorized to send message",
+          });
         }
 
         const chat = new Chat({
@@ -466,11 +745,15 @@ export const initGroupSocket = (server) => {
 
         await chat.save();
         await chat.populate("senderId", "displayName");
-        console.log(`[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${groupId}`);
+        console.log(
+          `[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${groupId}`
+        );
 
         const groupRoom = `group_${groupId}`;
         io.to(groupRoom).emit("new_voice_message", { message: chat });
-        console.log(`[SEND_VOICE_MESSAGE] Emitted new_voice_message to groupId=${groupId}`);
+        console.log(
+          `[SEND_VOICE_MESSAGE] Emitted new_voice_message to groupId=${groupId}`
+        );
 
         setTimeout(async () => {
           const updatedChat = await Chat.findByIdAndUpdate(
@@ -478,25 +761,42 @@ export const initGroupSocket = (server) => {
             { status: "delivered" },
             { new: true }
           );
-          io.to(groupRoom).emit("message_status_update", { messageId: chat._id, status: "delivered" });
-          console.log(`[SEND_VOICE_MESSAGE] Updated status to delivered: messageId=${chat._id}`);
+          io.to(groupRoom).emit("message_status_update", {
+            messageId: chat._id,
+            status: "delivered",
+          });
+          console.log(
+            `[SEND_VOICE_MESSAGE] Updated status to delivered: messageId=${chat._id}`
+          );
         }, 100);
 
         callback({ success: true, message: chat });
-        console.log(`[SEND_VOICE_MESSAGE_SUCCESS] Voice message sent: messageId=${chat._id}, groupId=${groupId}`);
+        console.log(
+          `[SEND_VOICE_MESSAGE_SUCCESS] Voice message sent: messageId=${chat._id}, groupId=${groupId}`
+        );
       } catch (error) {
-        console.error(`[SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Typing indicator */
     socket.on("typing", ({ groupId, typing }) => {
-      console.log(`[TYPING] User typing status: userId=${socket.userId}, groupId=${groupId}, typing=${typing}`);
+      console.log(
+        `[TYPING] User typing status: userId=${socket.userId}, groupId=${groupId}, typing=${typing}`
+      );
 
       const userId = socket.userId;
       if (!userId || !groupId || !isValidObjectId(groupId)) {
-        console.error(`[TYPING_ERROR] Invalid input: userId=${userId}, groupId=${groupId}`);
+        console.error(
+          `[TYPING_ERROR] Invalid input: userId=${userId}, groupId=${groupId}`
+        );
         return;
       }
 
@@ -507,95 +807,146 @@ export const initGroupSocket = (server) => {
           typingUsers.set(groupId, new Set());
         }
         typingUsers.get(groupId).add(userId);
-        console.log(`[TYPING] Added to typing users: userId=${userId}, groupId=${groupId}`);
+        console.log(
+          `[TYPING] Added to typing users: userId=${userId}, groupId=${groupId}`
+        );
 
-        socket.to(groupRoom).emit("user_typing", { userId, groupId, typing: true });
+        socket
+          .to(groupRoom)
+          .emit("user_typing", { userId, groupId, typing: true });
         console.log(`[TYPING] Emitted typing=true to groupId=${groupId}`);
       } else {
         if (typingUsers.has(groupId)) {
           typingUsers.get(groupId).delete(userId);
           if (typingUsers.get(groupId).size === 0) {
             typingUsers.delete(groupId);
-            console.log(`[TYPING] Removed empty typing set for groupId=${groupId}`);
+            console.log(
+              `[TYPING] Removed empty typing set for groupId=${groupId}`
+            );
           }
         }
 
-        socket.to(groupRoom).emit("user_typing", { userId, groupId, typing: false });
+        socket
+          .to(groupRoom)
+          .emit("user_typing", { userId, groupId, typing: false });
         console.log(`[TYPING] Emitted typing=false to groupId=${groupId}`);
       }
     });
 
     /** Mark message as read */
     socket.on("mark_message_read", async (data, callback) => {
-      console.log(`[MARK_MESSAGE_READ] Attempting to mark message read: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[MARK_MESSAGE_READ] Attempting to mark message read: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { messageId } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(`[MARK_MESSAGE_READ_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[MARK_MESSAGE_READ_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(messageId)) {
-          console.error(`[MARK_MESSAGE_READ_ERROR] Invalid messageId: ${messageId}`);
+          console.error(
+            `[MARK_MESSAGE_READ_ERROR] Invalid messageId: ${messageId}`
+          );
           return callback({ success: false, message: "Invalid message ID" });
         }
 
         const message = await Chat.findById(messageId);
         if (!message) {
-          console.error(`[MARK_MESSAGE_READ_ERROR] Message not found: messageId=${messageId}`);
+          console.error(
+            `[MARK_MESSAGE_READ_ERROR] Message not found: messageId=${messageId}`
+          );
           return callback({ success: false, message: "Message not found" });
         }
 
         message.status = "read";
         await message.save();
-        console.log(`[MARK_MESSAGE_READ] Message marked read: messageId=${messageId}`);
+        console.log(
+          `[MARK_MESSAGE_READ] Message marked read: messageId=${messageId}`
+        );
 
         const groupRoom = `group_${message.groupId}`;
-        io.to(groupRoom).emit("message_status_update", { messageId, status: "read", readBy: userId });
-        console.log(`[MARK_MESSAGE_READ] Emitted status update to groupId=${message.groupId}`);
+        io.to(groupRoom).emit("message_status_update", {
+          messageId,
+          status: "read",
+          readBy: userId,
+        });
+        console.log(
+          `[MARK_MESSAGE_READ] Emitted status update to groupId=${message.groupId}`
+        );
 
         const senderSocketId = onlineUsers.get(message.senderId.toString());
         if (senderSocketId) {
-          io.to(senderSocketId).emit("message_read", { messageId, readBy: userId });
-          console.log(`[MARK_MESSAGE_READ] Notified sender: senderId=${message.senderId}, messageId=${messageId}`);
+          io.to(senderSocketId).emit("message_read", {
+            messageId,
+            readBy: userId,
+          });
+          console.log(
+            `[MARK_MESSAGE_READ] Notified sender: senderId=${message.senderId}, messageId=${messageId}`
+          );
         }
 
         callback({ success: true, message });
-        console.log(`[MARK_MESSAGE_READ_SUCCESS] Message marked read: messageId=${messageId}`);
+        console.log(
+          `[MARK_MESSAGE_READ_SUCCESS] Message marked read: messageId=${messageId}`
+        );
       } catch (error) {
-        console.error(`[MARK_MESSAGE_READ_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[MARK_MESSAGE_READ_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Get group messages with pagination */
     socket.on("get_group_messages", async (data, callback) => {
-      console.log(`[GET_GROUP_MESSAGES] Fetching messages: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[GET_GROUP_MESSAGES] Fetching messages: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { groupId, page = 1, limit = 50 } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(`[GET_GROUP_MESSAGES_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[GET_GROUP_MESSAGES_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId)) {
-          console.error(`[GET_GROUP_MESSAGES_ERROR] Invalid groupId: ${groupId}`);
+          console.error(
+            `[GET_GROUP_MESSAGES_ERROR] Invalid groupId: ${groupId}`
+          );
           return callback({ success: false, message: "Invalid group ID" });
         }
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[GET_GROUP_MESSAGES_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[GET_GROUP_MESSAGES_ERROR] Group not found: groupId=${groupId}`
+          );
           return callback({ success: false, message: "Group not found" });
         }
 
         const isMember = group.members.some((id) => id.toString() === userId);
         if (!isMember) {
-          console.error(`[GET_GROUP_MESSAGES_ERROR] Not authorized: userId=${userId}, groupId=${groupId}`);
+          console.error(
+            `[GET_GROUP_MESSAGES_ERROR] Not authorized: userId=${userId}, groupId=${groupId}`
+          );
           return callback({ success: false, message: "Not authorized" });
         }
 
@@ -605,15 +956,22 @@ export const initGroupSocket = (server) => {
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit);
-        console.log(`[GET_GROUP_MESSAGES] Fetched ${messages.length} messages for groupId=${groupId}, page=${page}`);
+        console.log(
+          `[GET_GROUP_MESSAGES] Fetched ${messages.length} messages for groupId=${groupId}, page=${page}`
+        );
 
         const unreadMessages = messages.filter(
           (msg) => msg.senderId.toString() !== userId && msg.status === "sent"
         );
         if (unreadMessages.length > 0) {
           const unreadIds = unreadMessages.map((msg) => msg._id);
-          await Chat.updateMany({ _id: { $in: unreadIds } }, { status: "delivered" });
-          console.log(`[GET_GROUP_MESSAGES] Marked ${unreadMessages.length} messages as delivered for groupId=${groupId}`);
+          await Chat.updateMany(
+            { _id: { $in: unreadIds } },
+            { status: "delivered" }
+          );
+          console.log(
+            `[GET_GROUP_MESSAGES] Marked ${unreadMessages.length} messages as delivered for groupId=${groupId}`
+          );
         }
 
         callback({
@@ -621,39 +979,62 @@ export const initGroupSocket = (server) => {
           messages: messages.reverse(),
           hasMore: messages.length === limit,
         });
-        console.log(`[GET_GROUP_MESSAGES_SUCCESS] Messages fetched: groupId=${groupId}, page=${page}`);
+        console.log(
+          `[GET_GROUP_MESSAGES_SUCCESS] Messages fetched: groupId=${groupId}, page=${page}`
+        );
       } catch (error) {
-        console.error(`[GET_GROUP_MESSAGES_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[GET_GROUP_MESSAGES_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Delete message */
     socket.on("delete_message", async (data, callback) => {
-      console.log(`[DELETE_MESSAGE] Attempting to delete message: userId=${socket.userId}, data=${JSON.stringify(data)}`);
+      console.log(
+        `[DELETE_MESSAGE] Attempting to delete message: userId=${
+          socket.userId
+        }, data=${JSON.stringify(data)}`
+      );
 
       try {
         const { messageId, forEveryone = false } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(`[DELETE_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`);
+          console.error(
+            `[DELETE_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`
+          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(messageId)) {
-          console.error(`[DELETE_MESSAGE_ERROR] Invalid messageId: ${messageId}`);
+          console.error(
+            `[DELETE_MESSAGE_ERROR] Invalid messageId: ${messageId}`
+          );
           return callback({ success: false, message: "Invalid message ID" });
         }
 
         const message = await Chat.findById(messageId);
         if (!message) {
-          console.error(`[DELETE_MESSAGE_ERROR] Message not found: messageId=${messageId}`);
+          console.error(
+            `[DELETE_MESSAGE_ERROR] Message not found: messageId=${messageId}`
+          );
           return callback({ success: false, message: "Message not found" });
         }
 
         if (forEveryone && message.senderId.toString() !== userId) {
-          console.error(`[DELETE_MESSAGE_ERROR] Not authorized to delete for everyone: userId=${userId}, senderId=${message.senderId}`);
-          return callback({ success: false, message: "Not authorized to delete for everyone" });
+          console.error(
+            `[DELETE_MESSAGE_ERROR] Not authorized to delete for everyone: userId=${userId}, senderId=${message.senderId}`
+          );
+          return callback({
+            success: false,
+            message: "Not authorized to delete for everyone",
+          });
         }
 
         if (forEveryone) {
@@ -666,23 +1047,37 @@ export const initGroupSocket = (server) => {
         }
 
         await message.save();
-        console.log(`[DELETE_MESSAGE] Message deleted: messageId=${messageId}, forEveryone=${forEveryone}`);
+        console.log(
+          `[DELETE_MESSAGE] Message deleted: messageId=${messageId}, forEveryone=${forEveryone}`
+        );
 
         const groupRoom = `group_${message.groupId}`;
         io.to(groupRoom).emit("message_deleted", { message });
-        console.log(`[DELETE_MESSAGE] Emitted message_deleted to groupId=${message.groupId}`);
+        console.log(
+          `[DELETE_MESSAGE] Emitted message_deleted to groupId=${message.groupId}`
+        );
 
         callback({ success: true, message });
-        console.log(`[DELETE_MESSAGE_SUCCESS] Message deleted: messageId=${messageId}`);
+        console.log(
+          `[DELETE_MESSAGE_SUCCESS] Message deleted: messageId=${messageId}`
+        );
       } catch (error) {
-        console.error(`[DELETE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
-        callback({ success: false, message: "Server error", error: error.message });
+        console.error(
+          `[DELETE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
+        callback({
+          success: false,
+          message: "Server error",
+          error: error.message,
+        });
       }
     });
 
     /** Join group room for real-time messaging */
     socket.on("join_group_room", async ({ groupId }) => {
-      console.log(`[JOIN_GROUP_ROOM] Attempting to join room: userId=${socket.userId}, groupId=${groupId}`);
+      console.log(
+        `[JOIN_GROUP_ROOM] Attempting to join room: userId=${socket.userId}, groupId=${groupId}`
+      );
 
       if (!isValidObjectId(groupId)) {
         console.error(`[JOIN_GROUP_ROOM_ERROR] Invalid groupId: ${groupId}`);
@@ -693,30 +1088,45 @@ export const initGroupSocket = (server) => {
       try {
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(`[JOIN_GROUP_ROOM_ERROR] Group not found: groupId=${groupId}`);
+          console.error(
+            `[JOIN_GROUP_ROOM_ERROR] Group not found: groupId=${groupId}`
+          );
           socket.emit("error", { message: "Group not found" });
           return;
         }
 
         const roomName = `group_${groupId}`;
         socket.join(roomName);
-        console.log(`[JOIN_GROUP_ROOM] Joined room: groupId=${groupId}, socketId=${socket.id}`);
+        console.log(
+          `[JOIN_GROUP_ROOM] Joined room: groupId=${groupId}, socketId=${socket.id}`
+        );
 
         if (group.musicUrl) {
-          socket.emit("play_group_music", { groupId, musicUrl: group.musicUrl });
-          console.log(`[JOIN_GROUP_ROOM] Emitted play_group_music: groupId=${groupId}, musicUrl=${group.musicUrl}`);
+          socket.emit("play_group_music", {
+            groupId,
+            musicUrl: group.musicUrl,
+          });
+          console.log(
+            `[JOIN_GROUP_ROOM] Emitted play_group_music: groupId=${groupId}, musicUrl=${group.musicUrl}`
+          );
         }
         socket.emit("group_room_joined", { groupId });
-        console.log(`[JOIN_GROUP_ROOM_SUCCESS] Room joined: groupId=${groupId}`);
+        console.log(
+          `[JOIN_GROUP_ROOM_SUCCESS] Room joined: groupId=${groupId}`
+        );
       } catch (error) {
-        console.error(`[JOIN_GROUP_ROOM_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
+        console.error(
+          `[JOIN_GROUP_ROOM_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+        );
         socket.emit("error", { message: "Server error", error: error.message });
       }
     });
 
     /** Leave group room */
     socket.on("leave_group_room", ({ groupId }) => {
-      console.log(`[LEAVE_GROUP_ROOM] Attempting to leave room: userId=${socket.userId}, groupId=${groupId}`);
+      console.log(
+        `[LEAVE_GROUP_ROOM] Attempting to leave room: userId=${socket.userId}, groupId=${groupId}`
+      );
 
       if (!isValidObjectId(groupId)) {
         console.error(`[LEAVE_GROUP_ROOM_ERROR] Invalid groupId: ${groupId}`);
@@ -727,12 +1137,16 @@ export const initGroupSocket = (server) => {
       socket.leave(roomName);
       socket.emit("stop_group_music", { groupId });
       socket.emit("group_room_left", { groupId });
-      console.log(`[LEAVE_GROUP_ROOM_SUCCESS] Left room: groupId=${groupId}, socketId=${socket.id}`);
+      console.log(
+        `[LEAVE_GROUP_ROOM_SUCCESS] Left room: groupId=${groupId}, socketId=${socket.id}`
+      );
     });
 
     /** Get typing users in group */
     socket.on("get_typing_users", ({ groupId }) => {
-      console.log(`[GET_TYPING_USERS] Fetching typing users: groupId=${groupId}`);
+      console.log(
+        `[GET_TYPING_USERS] Fetching typing users: groupId=${groupId}`
+      );
 
       if (!isValidObjectId(groupId)) {
         console.error(`[GET_TYPING_USERS_ERROR] Invalid groupId: ${groupId}`);
@@ -742,18 +1156,24 @@ export const initGroupSocket = (server) => {
       const typingSet = typingUsers.get(groupId) || new Set();
       const typingArray = Array.from(typingSet);
       socket.emit("typing_users", { groupId, users: typingArray });
-      console.log(`[GET_TYPING_USERS_SUCCESS] Sent typing users: groupId=${groupId}, users=${typingArray}`);
+      console.log(
+        `[GET_TYPING_USERS_SUCCESS] Sent typing users: groupId=${groupId}, users=${typingArray}`
+      );
     });
 
     /** Disconnect handling */
     socket.on("disconnect", async () => {
       const disconnectedUserId = socket.userId;
       if (!disconnectedUserId) {
-        console.log(`[DISCONNECT] Unknown user disconnected: socketId=${socket.id}`);
+        console.log(
+          `[DISCONNECT] Unknown user disconnected: socketId=${socket.id}`
+        );
         return;
       }
 
-      console.log(`[DISCONNECT] User disconnected: userId=${disconnectedUserId}, socketId=${socket.id}`);
+      console.log(
+        `[DISCONNECT] User disconnected: userId=${disconnectedUserId}, socketId=${socket.id}`
+      );
 
       onlineUsers.delete(disconnectedUserId);
 
@@ -763,20 +1183,34 @@ export const initGroupSocket = (server) => {
           { online: false, lastSeen: new Date() },
           { new: true }
         );
-        console.log(`[DISCONNECT] User updated: userId=${disconnectedUserId}, online=false`);
+        console.log(
+          `[DISCONNECT] User updated: userId=${disconnectedUserId}, online=false`
+        );
 
         typingUsers.forEach((userSet, groupId) => {
           if (userSet.has(disconnectedUserId)) {
             userSet.delete(disconnectedUserId);
             const groupRoom = `group_${groupId}`;
-            socket.to(groupRoom).emit("user_typing", { userId: disconnectedUserId, groupId, typing: false });
-            console.log(`[DISCONNECT] Cleared typing status: userId=${disconnectedUserId}, groupId=${groupId}`);
+            socket
+              .to(groupRoom)
+              .emit("user_typing", {
+                userId: disconnectedUserId,
+                groupId,
+                typing: false,
+              });
+            console.log(
+              `[DISCONNECT] Cleared typing status: userId=${disconnectedUserId}, groupId=${groupId}`
+            );
           }
         });
 
-        console.log(`[DISCONNECT_SUCCESS] User disconnected from group socket: userId=${disconnectedUserId}`);
+        console.log(
+          `[DISCONNECT_SUCCESS] User disconnected from group socket: userId=${disconnectedUserId}`
+        );
       } catch (error) {
-        console.error(`[DISCONNECT_ERROR] Failed: userId=${disconnectedUserId}, error=${error.message}`);
+        console.error(
+          `[DISCONNECT_ERROR] Failed: userId=${disconnectedUserId}, error=${error.message}`
+        );
       }
     });
   });
