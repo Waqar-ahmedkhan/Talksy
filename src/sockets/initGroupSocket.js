@@ -12,7 +12,7 @@ export const initGroupSocket = (server) => {
   });
 
   const onlineUsers = new Map();
-  const typingUsers = new Map(); // groupId -> Set of typing userIds
+  const typingUsers = new Map(); 
 
   io.on("connection", (socket) => {
     console.log(`[GROUP_SOCKET] User connected: socketId=${socket.id}, time=${new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" })}`);
