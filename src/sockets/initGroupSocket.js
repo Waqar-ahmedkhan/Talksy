@@ -620,28 +620,21 @@ export const initGroupSocket = (server) => {
       }
     });
 
-    /** Remove member from group */
+    /** Remove member from group (self-leave or admin/creator removal) */
     socket.on("remove_group_member", async (data, callback) => {
       console.log(
         `[REMOVE_GROUP_MEMBER] Attempting to remove member: userId=${
           socket.userId
         }, data=${JSON.stringify(data)}`
       );
-
       try {
         const { groupId, memberId } = data;
         const userId = socket.userId;
 
         if (!userId) {
-          console.error(
-            `[REMOVE_GROUP_MEMBER_ERROR] Not authenticated: socketId=${socket.id}`
-          );
           return callback({ success: false, message: "Not authenticated" });
         }
         if (!isValidObjectId(groupId) || !isValidObjectId(memberId)) {
-          console.error(
-            `[REMOVE_GROUP_MEMBER_ERROR] Invalid IDs: groupId=${groupId}, memberId=${memberId}`
-          );
           return callback({
             success: false,
             message: "Invalid group or member ID",
@@ -650,76 +643,303 @@ export const initGroupSocket = (server) => {
 
         const group = await Group.findById(groupId);
         if (!group) {
-          console.error(
-            `[REMOVE_GROUP_MEMBER_ERROR] Group not found: groupId=${groupId}`
-          );
           return callback({ success: false, message: "Group not found" });
         }
 
-        if (group.createdBy.toString() !== userId) {
-          console.error(
-            `[REMOVE_GROUP_MEMBER_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`
-          );
-          return callback({ success: false, message: "Not authorized" });
-        }
-
-        if (memberId === group.createdBy.toString()) {
-          console.error(
-            `[REMOVE_GROUP_MEMBER_ERROR] Cannot remove creator: memberId=${memberId}`
-          );
+        // Check if user is a member
+        const isMember = group.members
+          .map((id) => id.toString())
+          .includes(userId);
+        if (!isMember) {
           return callback({
             success: false,
-            message: "Cannot remove group creator",
+            message: "You are not a member of this group",
           });
         }
 
+        // Case 1: User is trying to leave themselves
+        if (memberId === userId) {
+          // Creator cannot leave
+          if (memberId === group.createdBy.toString()) {
+            return callback({
+              success: false,
+              message: "Group creator cannot leave. Delete the group instead.",
+            });
+          }
+
+          // Admin can leave only if not the last admin
+          const isAdmin = group.admins
+            ?.map((id) => id.toString())
+            .includes(userId);
+          if (isAdmin) {
+            const activeAdmins = group.admins.filter(
+              (adminId) =>
+                adminId.toString() !== userId &&
+                group.members
+                  .map((m) => m.toString())
+                  .includes(adminId.toString())
+            );
+            if (activeAdmins.length === 0) {
+              return callback({
+                success: false,
+                message:
+                  "You are the last admin. Promote another admin before leaving.",
+              });
+            }
+          }
+        }
+        // Case 2: User is trying to remove someone else → must be creator or admin
+        else {
+          const isCreator = group.createdBy.toString() === userId;
+          const isAdmin = group.admins
+            ?.map((id) => id.toString())
+            .includes(userId);
+          if (!isCreator && !isAdmin) {
+            return callback({
+              success: false,
+              message: "Only admins or creator can remove members",
+            });
+          }
+
+          // Cannot remove the creator
+          if (memberId === group.createdBy.toString()) {
+            return callback({
+              success: false,
+              message: "Cannot remove group creator",
+            });
+          }
+
+          // Admins cannot remove other admins (optional — you can allow this if needed)
+          if (isAdmin && !isCreator) {
+            const targetIsAdmin = group.admins
+              ?.map((id) => id.toString())
+              .includes(memberId);
+            if (targetIsAdmin) {
+              return callback({
+                success: false,
+                message: "Admins cannot remove other admins",
+              });
+            }
+          }
+        }
+
+        // Perform removal
         group.members = group.members.filter(
           (id) => id.toString() !== memberId
         );
         group.updatedAt = Date.now();
         await group.save();
-        console.log(
-          `[REMOVE_GROUP_MEMBER] Removed member: memberId=${memberId}, groupId=${groupId}`
-        );
 
+        // Notify removed user
         const removedSocketId = onlineUsers.get(memberId);
         if (removedSocketId) {
           io.to(removedSocketId).emit("removed_from_group", { groupId });
           io.to(removedSocketId).emit("stop_group_music", { groupId });
           io.sockets.sockets.get(removedSocketId)?.leave(`group_${groupId}`);
-          console.log(
-            `[REMOVE_GROUP_MEMBER] Notified removed member: memberId=${memberId}, groupId=${groupId}`
-          );
         }
 
-        group.members.forEach((memberId) => {
-          const memberSocketId = onlineUsers.get(memberId.toString());
-          if (memberSocketId) {
-            io.to(memberSocketId).emit("group_member_removed", {
-              groupId,
-              removedMember: memberId,
-            });
-            console.log(
-              `[REMOVE_GROUP_MEMBER] Notified member: memberId=${memberId}, groupId=${groupId}`
-            );
-          }
+        // Notify remaining members
+        const groupRoom = `group_${groupId}`;
+        io.to(groupRoom).emit("group_member_removed", {
+          groupId,
+          removedMember: memberId,
         });
 
         callback({ success: true, group });
         console.log(
-          `[REMOVE_GROUP_MEMBER_SUCCESS] Member removed from groupId=${groupId}`
+          `[REMOVE_GROUP_MEMBER_SUCCESS] Member removed: ${memberId} from group ${groupId}`
         );
       } catch (error) {
-        console.error(
-          `[REMOVE_GROUP_MEMBER_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
-        );
-        callback({
-          success: false,
-          message: "Server error",
-          error: error.message,
-        });
+        console.error(`[REMOVE_GROUP_MEMBER_ERROR] ${error.message}`);
+        callback({ success: false, message: "Server error" });
       }
     });
+    /** Remove member from group (self-leave or admin removal) */
+    // socket.on("remove_group_member", async (data, callback) => {
+    //   console.log(
+    //     `[REMOVE_GROUP_MEMBER] Attempting to remove member: userId=${socket.userId}, data=${JSON.stringify(data)}`
+    //   );
+
+    //   try {
+    //     const { groupId, memberId } = data;
+    //     const userId = socket.userId;
+
+    //     if (!userId) {
+    //       console.error(`[REMOVE_GROUP_MEMBER_ERROR] Not authenticated: socketId=${socket.id}`);
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+    //     if (!isValidObjectId(groupId) || !isValidObjectId(memberId)) {
+    //       console.error(`[REMOVE_GROUP_MEMBER_ERROR] Invalid IDs: groupId=${groupId}, memberId=${memberId}`);
+    //       return callback({ success: false, message: "Invalid group or member ID" });
+    //     }
+
+    //     const group = await Group.findById(groupId);
+    //     if (!group) {
+    //       console.error(`[REMOVE_GROUP_MEMBER_ERROR] Group not found: groupId=${groupId}`);
+    //       return callback({ success: false, message: "Group not found" });
+    //     }
+
+    //     // Check if user is a member (required for self-leave or removal)
+    //     const isMember = group.members.map(id => id.toString()).includes(userId);
+    //     if (!isMember) {
+    //       return callback({ success: false, message: "You are not a member of this group" });
+    //     }
+
+    //     // Case 1: User is trying to leave themselves
+    //     if (memberId === userId) {
+    //       // Allow self-leave (even if creator — but warn UI not to allow it)
+    //       if (memberId === group.createdBy.toString()) {
+    //         // Optional: Prevent creator from leaving (recommended)
+    //         return callback({ success: false, message: "Group creator cannot leave. Transfer ownership first or delete the group." });
+    //       }
+    //     }
+    //     // Case 2: User is trying to remove someone else → must be creator or admin
+    //     else {
+    //       const isCreator = group.createdBy.toString() === userId;
+    //       const isAdmin = group.admins?.map(id => id.toString()).includes(userId);
+    //       if (!isCreator && !isAdmin) {
+    //         console.error(`[REMOVE_GROUP_MEMBER_ERROR] Not authorized: userId=${userId} is not admin/creator`);
+    //         return callback({ success: false, message: "Only admins or creator can remove members" });
+    //       }
+
+    //       // Prevent removing the creator
+    //       if (memberId === group.createdBy.toString()) {
+    //         console.error(`[REMOVE_GROUP_MEMBER_ERROR] Cannot remove creator: memberId=${memberId}`);
+    //         return callback({ success: false, message: "Cannot remove group creator" });
+    //       }
+    //     }
+
+    //     // Perform removal
+    //     group.members = group.members.filter(id => id.toString() !== memberId);
+    //     group.updatedAt = Date.now();
+    //     await group.save();
+
+    //     console.log(`[REMOVE_GROUP_MEMBER] Removed member: memberId=${memberId}, groupId=${groupId}`);
+
+    //     // Notify removed user
+    //     const removedSocketId = onlineUsers.get(memberId);
+    //     if (removedSocketId) {
+    //       io.to(removedSocketId).emit("removed_from_group", { groupId });
+    //       io.to(removedSocketId).emit("stop_group_music", { groupId });
+    //       io.sockets.sockets.get(removedSocketId)?.leave(`group_${groupId}`);
+    //       console.log(`[REMOVE_GROUP_MEMBER] Notified removed member: memberId=${memberId}`);
+    //     }
+
+    //     // Notify remaining members
+    //     const groupRoom = `group_${groupId}`;
+    //     io.to(groupRoom).emit("group_member_removed", {
+    //       groupId,
+    //       removedMember: memberId,
+    //     });
+
+    //     callback({ success: true, group });
+    //     console.log(`[REMOVE_GROUP_MEMBER_SUCCESS] Member removed from groupId=${groupId}`);
+    //   } catch (error) {
+    //     console.error(`[REMOVE_GROUP_MEMBER_ERROR] Failed: userId=${socket.userId}, error=${error.message}`);
+    //     callback({ success: false, message: "Server error", error: error.message });
+    //   }
+    // });
+
+    /** Remove member from group */
+    // socket.on("remove_group_member", async (data, callback) => {
+    //   console.log(
+    //     `[REMOVE_GROUP_MEMBER] Attempting to remove member: userId=${
+    //       socket.userId
+    //     }, data=${JSON.stringify(data)}`
+    //   );
+
+    //   try {
+    //     const { groupId, memberId } = data;
+    //     const userId = socket.userId;
+
+    //     if (!userId) {
+    //       console.error(
+    //         `[REMOVE_GROUP_MEMBER_ERROR] Not authenticated: socketId=${socket.id}`
+    //       );
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+    //     if (!isValidObjectId(groupId) || !isValidObjectId(memberId)) {
+    //       console.error(
+    //         `[REMOVE_GROUP_MEMBER_ERROR] Invalid IDs: groupId=${groupId}, memberId=${memberId}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid group or member ID",
+    //       });
+    //     }
+
+    //     const group = await Group.findById(groupId);
+    //     if (!group) {
+    //       console.error(
+    //         `[REMOVE_GROUP_MEMBER_ERROR] Group not found: groupId=${groupId}`
+    //       );
+    //       return callback({ success: false, message: "Group not found" });
+    //     }
+
+    //     if (group.createdBy.toString() !== userId) {
+    //       console.error(
+    //         `[REMOVE_GROUP_MEMBER_ERROR] Not authorized: userId=${userId}, groupCreator=${group.createdBy}`
+    //       );
+    //       return callback({ success: false, message: "Not authorized" });
+    //     }
+
+    //     if (memberId === group.createdBy.toString()) {
+    //       console.error(
+    //         `[REMOVE_GROUP_MEMBER_ERROR] Cannot remove creator: memberId=${memberId}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Cannot remove group creator",
+    //       });
+    //     }
+
+    //     group.members = group.members.filter(
+    //       (id) => id.toString() !== memberId
+    //     );
+    //     group.updatedAt = Date.now();
+    //     await group.save();
+    //     console.log(
+    //       `[REMOVE_GROUP_MEMBER] Removed member: memberId=${memberId}, groupId=${groupId}`
+    //     );
+
+    //     const removedSocketId = onlineUsers.get(memberId);
+    //     if (removedSocketId) {
+    //       io.to(removedSocketId).emit("removed_from_group", { groupId });
+    //       io.to(removedSocketId).emit("stop_group_music", { groupId });
+    //       io.sockets.sockets.get(removedSocketId)?.leave(`group_${groupId}`);
+    //       console.log(
+    //         `[REMOVE_GROUP_MEMBER] Notified removed member: memberId=${memberId}, groupId=${groupId}`
+    //       );
+    //     }
+
+    //     group.members.forEach((memberId) => {
+    //       const memberSocketId = onlineUsers.get(memberId.toString());
+    //       if (memberSocketId) {
+    //         io.to(memberSocketId).emit("group_member_removed", {
+    //           groupId,
+    //           removedMember: memberId,
+    //         });
+    //         console.log(
+    //           `[REMOVE_GROUP_MEMBER] Notified member: memberId=${memberId}, groupId=${groupId}`
+    //         );
+    //       }
+    //     });
+
+    //     callback({ success: true, group });
+    //     console.log(
+    //       `[REMOVE_GROUP_MEMBER_SUCCESS] Member removed from groupId=${groupId}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[REMOVE_GROUP_MEMBER_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+    //     );
+    //     callback({
+    //       success: false,
+    //       message: "Server error",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
 
     /** Send text message */
     socket.on("send_text_message", async (data, callback) => {
