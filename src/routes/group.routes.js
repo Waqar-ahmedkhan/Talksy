@@ -9,7 +9,7 @@ const router = express.Router();
 
 // Middleware to verify authenticated user
 const authMiddleware = (req, res, next) => {
-  const userId = req.headers["user-id"]; // Replace with actual auth mechanism (e.g., JWT)
+  const userId = req.headers["user-id"]; 
   if (!userId || !isValidObjectId(userId)) {
     return res.status(401).json({ success: false, message: "Not authenticated" });
   }
