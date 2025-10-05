@@ -1014,9 +1014,16 @@ export const initGroupSocket = (server) => {
           `[GET_GROUP_MESSAGES] Fetched ${messages.length} messages for groupId=${groupId}, page=${page}`
         );
 
-        const unreadMessages = messages.filter(
-          (msg) => msg.senderId.toString() !== userId && msg.status === "sent"
-        );
+        const unreadMessages = messages.filter((msg) => {
+          // 🔒 SAFETY: Skip messages with missing or null senderId
+          if (!msg.senderId) {
+            console.warn(
+              `[GET_GROUP_MESSAGES] Skipping message with null senderId: ${msg._id}`
+            );
+            return false;
+          }
+          return msg.senderId.toString() !== userId && msg.status === "sent";
+        });
         if (unreadMessages.length > 0) {
           const unreadIds = unreadMessages.map((msg) => msg._id);
           await Chat.updateMany(
