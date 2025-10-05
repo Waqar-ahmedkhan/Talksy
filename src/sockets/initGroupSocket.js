@@ -253,14 +253,25 @@ export const initGroupSocket = (server) => {
           });
         }
 
+        // Inside socket.on("create_group", ...)
         const group = new Group({
           name,
-          channelId: channelId || null, // Optional: Set to null if not provided
+          channelId: channelId || null,
           createdBy: userId,
           members: [...new Set([userId, ...members])],
+          admins: [userId], // 👈 Auto-add creator as admin
           musicUrl: musicUrl || null,
           pictureUrl: pictureUrl || null,
         });
+
+        // const group = new Group({
+        //   name,
+        //   channelId: channelId || null, // Optional: Set to null if not provided
+        //   createdBy: userId,
+        //   members: [...new Set([userId, ...members])],
+        //   musicUrl: musicUrl || null,
+        //   pictureUrl: pictureUrl || null,
+        // });
 
         await group.save();
         console.log(
