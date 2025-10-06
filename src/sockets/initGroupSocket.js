@@ -1497,6 +1497,167 @@ export const initGroupSocket = (server) => {
       }
     });
 
+    socket.on("uploading_media", async ({ senderId, groupId, uploading }) => {
+      console.log(
+        `[UPLOADING_MEDIA] Group upload indicator: userId=${socket.userId}, groupId=${groupId}, uploading=${uploading}`
+      );
+      try {
+        if (!groupId || !isValidObjectId(groupId)) {
+          console.error(`[UPLOADING_MEDIA_ERROR] Invalid groupId: ${groupId}`);
+          return;
+        }
+        const group = await Group.findById(groupId);
+        if (!group) return;
+
+        // Emit to group room (efficient, since members are already joined)
+        const groupRoom = `group_${groupId}`;
+        socket
+          .to(groupRoom)
+          .emit("uploading_media", { senderId, groupId, uploading });
+        console.log(`[UPLOADING_MEDIA] Emitted to group room: ${groupRoom}`);
+      } catch (err) {
+        console.error("[UPLOADING_MEDIA_ERROR]", err.message);
+      }
+    });
+
+    /** Send media message (images/videos/files) to group */
+    socket.on("send_media", async ({ senderId, groupId, files }, callback) => {
+      console.log(
+        `[SEND_MEDIA] Attempting to send media: userId=${
+          socket.userId
+        }, groupId=${groupId}, files=${files?.length || 0}`
+      );
+
+      // Use provided callback if passed, else emit error
+      const ack =
+        callback || ((err) => socket.emit("media_error", { error: err }));
+
+      try {
+        if (
+          !files ||
+          !Array.isArray(files) ||
+          files.length === 0 ||
+          files.length > 10
+        ) {
+          return ack("Files must be a non-empty array (max 10)");
+        }
+        if (!groupId || !isValidObjectId(groupId)) {
+          return ack("Invalid group ID");
+        }
+
+        const userId = socket.userId;
+        if (!userId) {
+          return ack("Not authenticated");
+        }
+
+        // Validate files (your existing logic)
+        for (const file of files) {
+          const { type, url, fileType, duration, fileName } = file;
+          if (!["image", "video", "file"].includes(type)) {
+            return ack(`Invalid media type: ${type}`);
+          }
+          if (!url || typeof url !== "string" || url.trim() === "") {
+            return ack("Each file must have a valid URL");
+          }
+          if (!fileType || typeof fileType !== "string") {
+            return ack("Each file must have a valid MIME type");
+          }
+          if (type === "image" && !fileType.startsWith("image/")) {
+            return ack(`Invalid MIME type for image: ${fileType}`);
+          }
+          if (type === "video" && !fileType.startsWith("video/")) {
+            return ack(`Invalid MIME type for video: ${fileType}`);
+          }
+          if (
+            type === "video" &&
+            (typeof duration !== "number" || duration <= 0 || duration > 300)
+          ) {
+            return ack("Video duration invalid (max 5 minutes)");
+          }
+          if (type === "file" && (!fileName || typeof fileName !== "string")) {
+            return ack("Documents must have a file name");
+          }
+        }
+
+        // Verify group membership (your existing pattern)
+        const group = await Group.findById(groupId);
+        if (!group) {
+          return ack("Group not found");
+        }
+        const isMember = group.members.some((id) => id.toString() === userId);
+        if (!isMember) {
+          return ack("Not authorized to send message");
+        }
+
+        // Create Chat documents (adapted for group-only)
+        const chats = [];
+        for (const file of files) {
+          const { type, url, fileType, duration, fileName } = file;
+          const chat = new Chat({
+            senderId,
+            groupId, // Always set for groups
+            type,
+            content: url,
+            fileType,
+            fileName: type === "file" ? fileName : undefined,
+            duration: type === "video" ? duration : 0,
+            status: "sent",
+            deletedFor: [],
+          });
+          await chat.save();
+          await chat.populate("senderId", "displayName"); // For emission
+          chats.push(chat);
+        }
+
+        // Prepare payload (your existing logic, simplified)
+        const payload = chats.map((chat) => ({
+          id: chat._id.toString(),
+          senderId: chat.senderId.toString(),
+          groupId: chat.groupId.toString(),
+          content: chat.content,
+          type: chat.type,
+          fileType: chat.fileType,
+          fileName: chat.fileName,
+          duration: chat.duration,
+          timestamp: chat.createdAt,
+          status: chat.status,
+        }));
+
+        // Emit to group room (efficient!)
+        const groupRoom = `group_${groupId}`;
+        io.to(groupRoom).emit("new_media_message", payload); // Use "new_media_message" to match your text/voice pattern
+        console.log(
+          `[SEND_MEDIA] Emitted new_media_message to group room: ${groupRoom}`
+        );
+
+        // Mark as delivered after short delay (your existing pattern)
+        setTimeout(async () => {
+          await Chat.updateMany(
+            { _id: { $in: chats.map((c) => c._id) } },
+            { status: "delivered" }
+          );
+          io.to(groupRoom).emit("message_status_update", {
+            messageIds: chats.map((c) => c._id),
+            status: "delivered",
+          });
+          console.log(
+            `[SEND_MEDIA] Marked ${chats.length} media as delivered: groupId=${groupId}`
+          );
+        }, 100);
+
+        // Respond to sender
+        ack(null, { success: true, messages: payload });
+        console.log(
+          `[SEND_MEDIA_SUCCESS] Media sent: ${chats.length} files to groupId=${groupId}`
+        );
+      } catch (err) {
+        console.error(
+          `[SEND_MEDIA_ERROR] Failed: userId=${socket.userId}, error=${err.message}`
+        );
+        ack(`Server error: ${err.message}`);
+      }
+    });
+
     /** Leave group room */
     socket.on("leave_group_room", ({ groupId }) => {
       console.log(
