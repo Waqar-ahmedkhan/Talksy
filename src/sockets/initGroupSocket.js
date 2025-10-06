@@ -4,6 +4,7 @@ import Group from "../models/Group.js";
 import Chat from "../models/Chat.js";
 import User from "../models/User.js";
 import { isValidObjectId } from "mongoose";
+import mongoose from 'mongoose';
 
 export const initGroupSocket = (server) => {
   const io = new Server(server, {
