@@ -47,14 +47,23 @@ export const initAudioSocket = (server) => {
         return socket.disconnect();
       }
 
-      // Handle if userId is object (common Flutter issue: send stringified _id or phone)
-      let userIdStr = userId;
+      // Handle if userId is object (common Flutter issue: send stringified _id, phone, or nested {userId: '...'}
+      let userIdStr = '';
       if (typeof userId === 'object') {
-        userIdStr = userId._id || userId.phone || userId.toString(); // Fallback to string rep
-        console.log(`[AUDIO_JOIN] Converted object userId to string: ${userIdStr} at ${getPKTTimestamp()}`);
+        // Try nested 'userId' first (as seen in logs: { userId: '+923120110916' })
+        userIdStr = userId.userId || userId._id || userId.phone || userId.id || userId.toString();
+        console.log(`[AUDIO_JOIN] Converted object userId to string: ${userIdStr} (raw object keys: ${Object.keys(userId)}) at ${getPKTTimestamp()}`);
       } else {
         userIdStr = userId.toString();
       }
+
+      // Final validation
+      if (!userIdStr || userIdStr === '[object Object]' || userIdStr === 'undefined') {
+        console.log(`[AUDIO_JOIN_ERROR] Failed to extract valid userIdStr from:`, userId, `— disconnecting socket: ${socket.id} at ${getPKTTimestamp()}`);
+        return socket.disconnect();
+      }
+
+      console.log(`[AUDIO_JOIN] Final userIdStr extracted: ${userIdStr} at ${getPKTTimestamp()}`);
 
       // Check for duplicates
       if (onlineUsers.has(userIdStr)) {
@@ -62,16 +71,18 @@ export const initAudioSocket = (server) => {
         onlineUsers.set(userIdStr, socket.id);
       } else {
         onlineUsers.set(userIdStr, socket.id);
+        console.log(`[AUDIO_JOIN] Added new online user ${userIdStr} with socket ${socket.id} at ${getPKTTimestamp()}`);
       }
       
       socket.userId = userIdStr;
 
-      // Update user online status in database
+      // Update user online status in database (assuming phone field)
       try {
-        await User.findOneAndUpdate({ phone: userIdStr }, { online: true, lastSeen: new Date() }, { upsert: true });
-        console.log(`[AUDIO_JOIN_SUCCESS] User ${userIdStr} marked online in DB at ${getPKTTimestamp()}`);
+        const dbUpdate = await User.findOneAndUpdate({ phone: userIdStr }, { online: true, lastSeen: new Date() }, { upsert: true });
+        console.log(`[AUDIO_JOIN_SUCCESS] User ${userIdStr} marked online in DB (upserted: ${!!dbUpdate}) at ${getPKTTimestamp()}`);
       } catch (dbErr) {
         console.error(`[AUDIO_JOIN_ERROR] DB update failed for ${userIdStr}:`, dbErr, `at ${getPKTTimestamp()}`);
+        // Don't disconnect on DB error—keep socket alive
       }
       
       broadcastOnlineUsers();
@@ -79,17 +90,22 @@ export const initAudioSocket = (server) => {
 
     /** Request initial online users list */
     socket.on("request_online_users", () => {
-      console.log(`[AUDIO_REQUEST] Online users list requested by socket ${socket.id} at ${getPKTTimestamp()}`);
+      console.log(`[AUDIO_REQUEST] Online users list requested by socket ${socket.id} (user: ${socket.userId || 'unknown'}) at ${getPKTTimestamp()}`);
       broadcastOnlineUsers();
     });
 
     /** Initiate audio call (with WebRTC offer) */
     socket.on("call_user", async ({ callerId, calleeId, offer }) => {
       try {
-        console.log(`[AUDIO_CALL_INIT] Call_user event received: callerId=${callerId}, calleeId=${calleeId}, offer keys=${Object.keys(offer || {})} at ${getPKTTimestamp()}`);
+        console.log(`[AUDIO_CALL_INIT] Call_user event received: callerId=${callerId} (type: ${typeof callerId}), calleeId=${calleeId} (type: ${typeof calleeId}), offer keys=${Object.keys(offer || {})} at ${getPKTTimestamp()}`);
         
-        const caller = callerId.toString();
-        const callee = calleeId.toString();
+        const caller = callerId ? callerId.toString() : null;
+        const callee = calleeId ? calleeId.toString() : null;
+
+        if (!caller || !callee) {
+          console.log(`[AUDIO_CALL_ERROR] Missing callerId or calleeId in payload at ${getPKTTimestamp()}`);
+          return socket.emit("call_error", { error: "Missing call participants" });
+        }
 
         console.log(`[AUDIO_CALL] Processing call attempt: ${caller} → ${callee} at ${getPKTTimestamp()}`);
 
@@ -120,26 +136,27 @@ export const initAudioSocket = (server) => {
           ],
         });
         if (blocked) {
-          console.log(`[AUDIO_CALL_ERROR] Call blocked: ${caller} → ${callee} at ${getPKTTimestamp()}`);
+          console.log(`[AUDIO_CALL_ERROR] Call blocked: ${caller} → ${callee} (block doc: ${JSON.stringify(blocked)}) at ${getPKTTimestamp()}`);
           return socket.emit("call_error", { error: "Cannot call: User is blocked" });
         }
         console.log(`[AUDIO_CALL] No blocks found between ${caller} and ${callee} at ${getPKTTimestamp()}`);
 
         // Check if callee is busy
         if (busyUsers.has(callee) || pendingCalls.has(callee)) {
-          console.log(`[AUDIO_CALL_ERROR] Callee ${callee} is busy or has pending call at ${getPKTTimestamp()}`);
+          console.log(`[AUDIO_CALL_ERROR] Callee ${callee} is busy (busy: ${busyUsers.has(callee)}, pending: ${pendingCalls.has(callee)}) at ${getPKTTimestamp()}`);
           return socket.emit("user_busy", { calleeId: callee });
         }
 
         // Validate offer (basic check)
         if (!offer || !offer.type || !offer.sdp) {
-          console.log(`[AUDIO_CALL_ERROR] Invalid offer from ${caller}: missing type/sdp at ${getPKTTimestamp()}`);
+          console.log(`[AUDIO_CALL_ERROR] Invalid offer from ${caller}: type=${offer?.type}, sdp length=${offer?.sdp?.length || 0} at ${getPKTTimestamp()}`);
           return socket.emit("call_error", { error: "Invalid call offer" });
         }
+        console.log(`[AUDIO_CALL] Offer validated: type=${offer.type}, sdp length=${offer.sdp.length} at ${getPKTTimestamp()}`);
 
         // Store pending call
         pendingCalls.set(callee, { callerId: caller, offer });
-        console.log(`[AUDIO_CALL_PENDING] Stored pending call: ${caller} → ${callee} at ${getPKTTimestamp()}`);
+        console.log(`[AUDIO_CALL_PENDING] Stored pending call: ${caller} → ${callee} (offer type: ${offer.type}) at ${getPKTTimestamp()}`);
 
         const calleeSocket = onlineUsers.get(callee);
         if (calleeSocket) {
@@ -172,15 +189,16 @@ export const initAudioSocket = (server) => {
 
         const pending = pendingCalls.get(callee);
         if (!pending || pending.callerId !== caller) {
-          console.log(`[AUDIO_ACCEPT_ERROR] No valid pending call for ${callee} from ${caller} at ${getPKTTimestamp()}`);
+          console.log(`[AUDIO_ACCEPT_ERROR] No valid pending call for ${callee} from ${caller} (pending: ${!!pending}) at ${getPKTTimestamp()}`);
           return socket.emit("call_error", { error: "No pending call to accept" });
         }
 
         // Validate answer
         if (!answer || !answer.type || !answer.sdp) {
-          console.log(`[AUDIO_ACCEPT_ERROR] Invalid answer from ${callee}: missing type/sdp at ${getPKTTimestamp()}`);
+          console.log(`[AUDIO_ACCEPT_ERROR] Invalid answer from ${callee}: type=${answer?.type}, sdp length=${answer?.sdp?.length || 0} at ${getPKTTimestamp()}`);
           return socket.emit("call_error", { error: "Invalid call answer" });
         }
+        console.log(`[AUDIO_ACCEPT] Answer validated: type=${answer.type}, sdp length=${answer.sdp.length} at ${getPKTTimestamp()}`);
 
         const { offer } = pending;
         pendingCalls.delete(callee);
@@ -255,16 +273,17 @@ export const initAudioSocket = (server) => {
       console.log(`[AUDIO_ICE] ICE_candidate event received: toUserId=${toUserId}, candidate keys=${Object.keys(candidate || {})} at ${getPKTTimestamp()}`);
       
       if (!candidate || !candidate.candidate) {
-        console.log(`[AUDIO_ICE_ERROR] Invalid ICE candidate (missing candidate field) at ${getPKTTimestamp()}`);
+        console.log(`[AUDIO_ICE_ERROR] Invalid ICE candidate (missing candidate field, keys: ${Object.keys(candidate || {})}) at ${getPKTTimestamp()}`);
         return socket.emit("call_error", { error: "Invalid ICE candidate" });
       }
+      console.log(`[AUDIO_ICE] Valid ICE candidate: candidate=${candidate.candidate.substring(0, 50)}... (sdpMLineIndex: ${candidate.sdpMLineIndex}) at ${getPKTTimestamp()}`);
 
       const targetSocket = onlineUsers.get(toUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("ice_candidate", { candidate });
         console.log(`[AUDIO_ICE_SENT] ICE candidate relayed to ${toUserId} (socket: ${targetSocket}) at ${getPKTTimestamp()}`);
       } else {
-        console.warn(`[AUDIO_ICE_WARN] Target socket not found for ${toUserId} at ${getPKTTimestamp()}`);
+        console.warn(`[AUDIO_ICE_WARN] Target socket not found for ${toUserId} (online users: ${Array.from(onlineUsers.keys()).join(', ')}) at ${getPKTTimestamp()}`);
         // Don't emit error to avoid spam, but log
       }
     });
@@ -283,6 +302,8 @@ export const initAudioSocket = (server) => {
       busyUsers.delete(peer);
       if (wasBusyUser || wasBusyPeer) {
         console.log(`[AUDIO_END_BUSY] Unmarked busy users: ${user}, ${peer} (was busy: user=${wasBusyUser}, peer=${wasBusyPeer}) at ${getPKTTimestamp()}`);
+      } else {
+        console.log(`[AUDIO_END_BUSY] No busy status to unmark for ${user}/${peer} at ${getPKTTimestamp()}`);
       }
 
       const peerSocket = onlineUsers.get(peer);
@@ -307,15 +328,18 @@ export const initAudioSocket = (server) => {
       if (peerSocket) {
         const peerSocketObj = io.sockets.sockets.get(peerSocket);
         if (peerSocketObj) {
+          const peerWasInRoom = peerSocketObj.rooms.has(callRoom);
           peerSocketObj.leave(callRoom);
-          console.log(`[AUDIO_END_ROOM] Peer ${peer} left room ${callRoom} at ${getPKTTimestamp()}`);
+          if (peerWasInRoom) {
+            console.log(`[AUDIO_END_ROOM] Peer ${peer} left room ${callRoom} at ${getPKTTimestamp()}`);
+          }
         }
       }
     });
 
     /** Disconnect handling */
     socket.on("disconnect", async () => {
-      console.log(`[AUDIO_DISCONNECT] Socket disconnect event: ${socket.id} at ${getPKTTimestamp()}`);
+      console.log(`[AUDIO_DISCONNECT] Socket disconnect event: ${socket.id} (user: ${socket.userId || 'unknown'}) at ${getPKTTimestamp()}`);
       
       const disconnectedUserId = Array.from(onlineUsers.entries())
         .find(([_, socketId]) => socketId === socket.id)?.[0];
@@ -332,11 +356,12 @@ export const initAudioSocket = (server) => {
       // Clean up presence
       onlineUsers.delete(disconnectedUserId);
       if (wasBusy) busyUsers.delete(disconnectedUserId); // Only if was busy
+      console.log(`[AUDIO_DISCONNECT_CLEANUP] Removed ${disconnectedUserId} from online/busy maps (was busy: ${wasBusy}) at ${getPKTTimestamp()}`);
 
       // Update user offline status
       try {
-        await User.findOneAndUpdate({ phone: disconnectedUserId }, { online: false, lastSeen: new Date() });
-        console.log(`[AUDIO_DISCONNECT_DB] User ${disconnectedUserId} marked offline in DB at ${getPKTTimestamp()}`);
+        const dbUpdate = await User.findOneAndUpdate({ phone: disconnectedUserId }, { online: false, lastSeen: new Date() });
+        console.log(`[AUDIO_DISCONNECT_DB] User ${disconnectedUserId} marked offline in DB (updated: ${!!dbUpdate}) at ${getPKTTimestamp()}`);
       } catch (dbErr) {
         console.error(`[AUDIO_DISCONNECT_ERROR] DB update failed for ${disconnectedUserId}:`, dbErr, `at ${getPKTTimestamp()}`);
       }
@@ -350,22 +375,25 @@ export const initAudioSocket = (server) => {
         const callerSocket = onlineUsers.get(callerId);
         if (callerSocket) {
           io.to(callerSocket).emit("call_ended", { calleeId: disconnectedUserId, reason: "offline" });
-          console.log(`[AUDIO_DISCONNECT_NOTIFY] Sent call_ended (offline) to caller ${callerId} at ${getPKTTimestamp()}`);
+          console.log(`[AUDIO_DISCONNECT_NOTIFY] Sent call_ended (offline) to caller ${callerId} (socket: ${callerSocket}) at ${getPKTTimestamp()}`);
         }
       }
 
       // Notify peers in active calls (only if was busy)
       if (wasBusy) {
         console.log(`[AUDIO_DISCONNECT_BUSY] Notifying peers of busy user disconnect: ${disconnectedUserId} at ${getPKTTimestamp()}`);
+        let notifiedCount = 0;
         for (const [userId, sockId] of onlineUsers.entries()) {
           if (busyUsers.has(userId)) { // Check current busy (post-delete)
             const callRoom = [disconnectedUserId, userId].sort().join("-");
             if (io.sockets.adapter.rooms.has(callRoom)) {
               io.to(sockId).emit("call_ended", { fromUserId: disconnectedUserId, reason: "disconnected" });
-              console.log(`[AUDIO_DISCONNECT_NOTIFY] Sent call_ended (disconnected) to peer ${userId} in room ${callRoom} at ${getPKTTimestamp()}`);
+              console.log(`[AUDIO_DISCONNECT_NOTIFY] Sent call_ended (disconnected) to peer ${userId} in room ${callRoom} (socket: ${sockId}) at ${getPKTTimestamp()}`);
+              notifiedCount++;
             }
           }
         }
+        console.log(`[AUDIO_DISCONNECT_NOTIFY] Total peers notified: ${notifiedCount} at ${getPKTTimestamp()}`);
       }
 
       broadcastOnlineUsers();
