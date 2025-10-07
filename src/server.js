@@ -13,14 +13,11 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
 // ✅ Initialize all Socket.IO instances
-// Note: initGroupSocket already sets path: "/group-socket" internally
 const chatIo = initChatSocket(server, { path: "/chat-socket" });
 const videoIo = initVideoSocket(server);
 const audioIo = initAudioSocket(server);
 const groupIo = initGroupSocket(server); // ✅ Do NOT pass options here — path is set inside
 
-// ❌ REMOVE THIS BLOCK — it overrides your group socket logic!
-// groupIo.on("connection", (socket) => { ... });
 
 // ✅ Optional: Log connections for OTHER sockets (chat, video, audio)
 chatIo.on("connection", (socket) => {
