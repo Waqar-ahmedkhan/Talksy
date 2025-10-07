@@ -5,14 +5,14 @@ import User from "../models/User.js";
 import Block from "../models/Block.js";
 
 /**
- * Enhanced Video Calling Socket with WebRTC signaling support
- * FIXED ISSUES:
+ * PRODUCTION-GRADE Video Calling Socket with WebRTC signaling
+ * ✅ ICE Candidate Buffering (fixes early candidate routing)
  * ✅ Single socket per user enforcement
- * ✅ Proper ICE candidate routing
- * ✅ Graceful disconnect handling
- * ✅ Call cleanup on reconnect
- * ✅ Robust user ID resolution
- * ✅ Comprehensive logging with PKT timestamps
+ * ✅ Robust user ID resolution with cache invalidation
+ * ✅ Comprehensive call state management
+ * ✅ Graceful disconnect handling with peer notification
+ * ✅ Detailed logging with PKT timestamps
+ * ✅ Memory leak prevention with cleanup
  */
 export const initVideoSocket = (server) => {
   const io = new Server(server, {
@@ -23,27 +23,44 @@ export const initVideoSocket = (server) => {
   // Core data structures
   const onlineUsers = new Map(); // userId (MongoDB ID) -> socketId
   const busyUsers = new Set();   // userIds currently in any call
-  const pendingCalls = new Map(); // calleeId -> { callerId, type, offer }
+  const pendingCalls = new Map(); // calleeId -> { callerId, type, offer, timestamp }
   const phoneToUserIdMap = new Map(); // phone -> MongoDB ObjectID
+  const pendingIceCandidates = new Map(); // socketId -> Array of {candidate, targetUserId}
 
   // Helper for PKT timestamp
   const getPKTTimestamp = () => new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
 
-  // Enhanced user ID resolution with better caching
+  // Enhanced user ID resolution with cache validation
   const resolveToUserId = async (identifier) => {
     if (!identifier) return null;
     
     const idStr = identifier.toString().trim();
     
-    // Already a valid MongoDB ObjectID
+    // Already a valid MongoDB ObjectID - validate existence
     if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
-      return idStr;
+      try {
+        const userExists = await User.findById(idStr);
+        return userExists ? idStr : null;
+      } catch (err) {
+        console.log(`[VIDEO_RESOLVE_WARN] MongoDB ID validation failed for ${idStr}: ${err.message} at ${getPKTTimestamp()}`);
+        return null;
+      }
     }
     
-    // Phone number lookup with caching
+    // Phone number lookup with caching and validation
     if (idStr.startsWith('+') && /^\+\d{10,15}$/.test(idStr)) {
       if (phoneToUserIdMap.has(idStr)) {
-        return phoneToUserIdMap.get(idStr);
+        const cachedId = phoneToUserIdMap.get(idStr);
+        try {
+          const user = await User.findById(cachedId);
+          if (user && user.phone === idStr) {
+            return cachedId;
+          } else {
+            phoneToUserIdMap.delete(idStr); // Invalidate stale cache
+          }
+        } catch (err) {
+          phoneToUserIdMap.delete(idStr);
+        }
       }
       
       try {
@@ -58,7 +75,7 @@ export const initVideoSocket = (server) => {
       }
     }
     
-    // Fallback: try direct database lookup
+    // Fallback database lookup with validation
     try {
       const user = await User.findOne({ 
         $or: [
@@ -77,7 +94,7 @@ export const initVideoSocket = (server) => {
       console.log(`[VIDEO_RESOLVE_WARN] Fallback lookup failed for ${idStr}: ${err.message} at ${getPKTTimestamp()}`);
     }
     
-    return null; // Return null instead of original to prevent invalid routing
+    return null;
   };
 
   // Get phone from user ID with caching
@@ -93,7 +110,6 @@ export const initVideoSocket = (server) => {
       }
     }
     
-    // Database lookup
     try {
       const user = await User.findById(idStr);
       if (user && user.phone) {
@@ -118,10 +134,35 @@ export const initVideoSocket = (server) => {
     }
   };
 
+  // Flush buffered ICE candidates for a socket
+  const flushBufferedIceCandidates = (socketId, targetUserId) => {
+    if (!pendingIceCandidates.has(socketId)) return;
+    
+    const bufferedCandidates = pendingIceCandidates.get(socketId);
+    pendingIceCandidates.delete(socketId);
+    
+    const targetSocket = onlineUsers.get(targetUserId);
+    if (targetSocket) {
+      bufferedCandidates.forEach(({ candidate, fromUserId }) => {
+        io.to(targetSocket).emit("ice_candidate", { 
+          candidate,
+          fromUserId: fromUserId || null
+        });
+      });
+      console.log(`[VIDEO_ICE_FLUSH] Flushed ${bufferedCandidates.length} buffered ICE candidates to ${targetUserId} at ${getPKTTimestamp()}`);
+    }
+  };
+
   // Clean up user resources on disconnect
   const cleanupUserResources = async (userId, socketId, reason = "disconnect") => {
     try {
       console.log(`[VIDEO_CLEANUP] Starting cleanup for user ${userId} (socket: ${socketId}, reason: ${reason}) at ${getPKTTimestamp()}`);
+      
+      // Clean up pending ICE candidates
+      if (pendingIceCandidates.has(socketId)) {
+        pendingIceCandidates.delete(socketId);
+        console.log(`[VIDEO_CLEANUP] Cleared pending ICE candidates for socket ${socketId} at ${getPKTTimestamp()}`);
+      }
       
       // Remove from online users
       onlineUsers.delete(userId);
@@ -132,7 +173,6 @@ export const initVideoSocket = (server) => {
         pendingCalls.delete(userId);
         console.log(`[VIDEO_CLEANUP] Removed pending call: ${pending.callerId} → ${userId} at ${getPKTTimestamp()}`);
         
-        // Notify caller
         const callerSocket = onlineUsers.get(pending.callerId);
         if (callerSocket) {
           io.to(callerSocket).emit("call_ended", { 
@@ -193,10 +233,9 @@ export const initVideoSocket = (server) => {
         return socket.disconnect(true);
       }
 
-      // Extract userId string safely
       let userIdStr = '';
       if (typeof userId === 'object' && userId !== null) {
-        userIdStr = userId.userId || userId._id || userId.phone || userId.id || JSON.stringify(userId);
+        userIdStr = userId.userId || userId._id || userId.phone || userId.id || userId.toString();
       } else {
         userIdStr = userId.toString();
       }
@@ -206,7 +245,6 @@ export const initVideoSocket = (server) => {
         return socket.disconnect(true);
       }
 
-      // Resolve to MongoDB ObjectID
       const resolvedUserId = await resolveToUserId(userIdStr);
       if (!resolvedUserId) {
         console.log(`[VIDEO_JOIN_ERROR] Could not resolve userId "${userIdStr}" to valid user, disconnecting socket: ${socket.id} at ${getPKTTimestamp()}`);
@@ -215,15 +253,13 @@ export const initVideoSocket = (server) => {
 
       console.log(`[VIDEO_JOIN] Resolved "${userIdStr}" to MongoDB ID: ${resolvedUserId} at ${getPKTTimestamp()}`);
 
-      // ENFORCE SINGLE SOCKET PER USER - CRITICAL FIX
+      // ENFORCE SINGLE SOCKET PER USER
       if (onlineUsers.has(resolvedUserId)) {
         const oldSocketId = onlineUsers.get(resolvedUserId);
         console.log(`[VIDEO_JOIN_REPLACE] User ${resolvedUserId} already online on socket ${oldSocketId}, replacing with ${socket.id} at ${getPKTTimestamp()}`);
         
-        // Clean up old connection resources
         await cleanupUserResources(resolvedUserId, oldSocketId, "reconnect");
         
-        // Force disconnect old socket
         const oldSocket = io.sockets.sockets.get(oldSocketId);
         if (oldSocket) {
           oldSocket.disconnect(true);
@@ -231,11 +267,9 @@ export const initVideoSocket = (server) => {
         }
       }
 
-      // Register new socket
       onlineUsers.set(resolvedUserId, socket.id);
       socket.userId = resolvedUserId;
       
-      // Update database
       try {
         await User.findByIdAndUpdate(resolvedUserId, { online: true, lastSeen: new Date() });
         console.log(`[VIDEO_JOIN_SUCCESS] User ${resolvedUserId} marked online (socket: ${socket.id}) at ${getPKTTimestamp()}`);
@@ -325,7 +359,7 @@ export const initVideoSocket = (server) => {
           
           io.to(calleeSocket).emit("incoming_call", {
             callerId: callerPhone || resolvedCaller,
-            callerUserId: resolvedCaller, // Always send resolved MongoDB ID
+            callerUserId: resolvedCaller,
             calleeUserId: resolvedCallee,
             offer,
             callType
@@ -337,9 +371,8 @@ export const initVideoSocket = (server) => {
           return socket.emit("call_error", { error: "Callee unavailable" });
         }
 
-        // Confirm to caller
         socket.emit("calling", { 
-          calleeId: resolvedCallee, // Send resolved ID, not original
+          calleeId: resolvedCallee,
           callType 
         });
         console.log(`[VIDEO_CALL_SUCCESS] Call initiated: ${resolvedCaller} → ${resolvedCallee} [${callType}] at ${getPKTTimestamp()}`);
@@ -379,7 +412,7 @@ export const initVideoSocket = (server) => {
         busyUsers.add(resolvedCallee);
         console.log(`[VIDEO_ACCEPT] Call accepted: ${resolvedCaller} ↔ ${resolvedCallee} at ${getPKTTimestamp()}`);
 
-        // Notify caller
+        // Notify caller and flush ICE candidates
         const callerSocket = onlineUsers.get(resolvedCaller);
         if (callerSocket) {
           io.to(callerSocket).emit("call_accepted", {
@@ -389,6 +422,9 @@ export const initVideoSocket = (server) => {
             callType: pending.callType
           });
           console.log(`[VIDEO_ACCEPT_SENT] Sent call_accepted to ${resolvedCaller} at ${getPKTTimestamp()}`);
+          
+          // FLUSH BUFFERED ICE CANDIDATES FOR CALLER
+          flushBufferedIceCandidates(callerSocket, resolvedCallee);
         }
 
         // Create room
@@ -401,6 +437,9 @@ export const initVideoSocket = (server) => {
           if (callerSocketObj) {
             callerSocketObj.join(callRoom);
             console.log(`[VIDEO_ROOM] Caller ${resolvedCaller} joined room ${callRoom} at ${getPKTTimestamp()}`);
+            
+            // FLUSH BUFFERED ICE CANDIDATES FOR CALLEE
+            flushBufferedIceCandidates(socket.id, resolvedCaller);
           }
         }
 
@@ -443,7 +482,7 @@ export const initVideoSocket = (server) => {
       }
     });
 
-    // ICE CANDIDATE HANDLING - ENHANCED VALIDATION
+    // ICE CANDIDATE HANDLING WITH BUFFERING
     socket.on("ice_candidate", async ({ candidate, toUserId }) => {
       console.log(`[VIDEO_ICE] ICE candidate received for ${toUserId} from socket ${socket.id} at ${getPKTTimestamp()}`);
       
@@ -452,31 +491,48 @@ export const initVideoSocket = (server) => {
         return socket.emit("call_error", { error: "Invalid ICE candidate" });
       }
 
-      // Resolve target user
+      // If no toUserId provided, buffer the candidate
+      if (!toUserId || toUserId === 'undefined' || toUserId === 'null' || toUserId === null) {
+        if (!pendingIceCandidates.has(socket.id)) {
+          pendingIceCandidates.set(socket.id, []);
+        }
+        pendingIceCandidates.get(socket.id).push({ candidate, fromUserId: socket.userId });
+        console.log(`[VIDEO_ICE_BUFFER] Buffered ICE candidate (no target) for socket ${socket.id} at ${getPKTTimestamp()}`);
+        return;
+      }
+
       const resolvedToUserId = await resolveToUserId(toUserId);
       if (!resolvedToUserId) {
         console.warn(`[VIDEO_ICE_DROP] Dropping ICE candidate - invalid toUserId: ${toUserId} at ${getPKTTimestamp()}`);
         return;
       }
 
-      // CRITICAL VALIDATION: Ensure target is online
+      // If target is not online, buffer the candidate
       if (!onlineUsers.has(resolvedToUserId)) {
-        console.warn(`[VIDEO_ICE_DROP] Dropping ICE candidate - target ${resolvedToUserId} not online at ${getPKTTimestamp()}`);
+        if (!pendingIceCandidates.has(socket.id)) {
+          pendingIceCandidates.set(socket.id, []);
+        }
+        pendingIceCandidates.get(socket.id).push({ candidate, fromUserId: socket.userId });
+        console.log(`[VIDEO_ICE_BUFFER] Buffered ICE candidate (target offline) for socket ${socket.id} at ${getPKTTimestamp()}`);
         return;
       }
 
-      // CRITICAL VALIDATION: Ensure both parties are in active call
+      // If not in active call, buffer the candidate
       if (!socket.userId || !busyUsers.has(socket.userId) || !busyUsers.has(resolvedToUserId)) {
-        console.warn(`[VIDEO_ICE_DROP] Dropping ICE candidate - not in active call (from: ${socket.userId}, to: ${resolvedToUserId}) at ${getPKTTimestamp()}`);
+        if (!pendingIceCandidates.has(socket.id)) {
+          pendingIceCandidates.set(socket.id, []);
+        }
+        pendingIceCandidates.get(socket.id).push({ candidate, fromUserId: socket.userId, targetUserId: resolvedToUserId });
+        console.log(`[VIDEO_ICE_BUFFER] Buffered ICE candidate (not in call) for socket ${socket.id} at ${getPKTTimestamp()}`);
         return;
       }
 
-      // Relay candidate
+      // Relay candidate immediately
       const targetSocket = onlineUsers.get(resolvedToUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("ice_candidate", { 
           candidate,
-          fromUserId: socket.userId // Include sender ID for debugging
+          fromUserId: socket.userId
         });
         console.log(`[VIDEO_ICE_SENT] ICE candidate relayed to ${resolvedToUserId} at ${getPKTTimestamp()}`);
       } else {
@@ -496,12 +552,10 @@ export const initVideoSocket = (server) => {
         return;
       }
 
-      // Clean up busy status
       busyUsers.delete(resolvedUser);
       busyUsers.delete(resolvedPeer);
       console.log(`[VIDEO_END] Removed ${resolvedUser} and ${resolvedPeer} from busy users at ${getPKTTimestamp()}`);
 
-      // Notify peer
       const peerSocket = onlineUsers.get(resolvedPeer);
       if (peerSocket) {
         io.to(peerSocket).emit("call_ended", { 
@@ -511,7 +565,6 @@ export const initVideoSocket = (server) => {
         console.log(`[VIDEO_END_SENT] Call ended notification sent to ${resolvedPeer} at ${getPKTTimestamp()}`);
       }
 
-      // Leave room
       const callRoom = [resolvedUser, resolvedPeer].sort().join("-");
       socket.leave(callRoom);
       console.log(`[VIDEO_END_ROOM] User ${resolvedUser} left room ${callRoom} at ${getPKTTimestamp()}`);
@@ -533,11 +586,16 @@ export const initVideoSocket = (server) => {
         await cleanupUserResources(socket.userId, socket.id, reason);
         broadcastOnlineUsers();
       } else {
+        // Clean up pending ICE candidates for unknown sockets
+        if (pendingIceCandidates.has(socket.id)) {
+          pendingIceCandidates.delete(socket.id);
+          console.log(`[VIDEO_DISCONNECT] Cleaned pending ICE candidates for unknown socket ${socket.id} at ${getPKTTimestamp()}`);
+        }
         console.log(`[VIDEO_DISCONNECT] Unknown socket disconnected: ${socket.id} at ${getPKTTimestamp()}`);
       }
     });
   });
 
-  console.log(`[VIDEO_INIT] Video Socket server initialized on path /video-socket at ${getPKTTimestamp()}`);
+  console.log(`[VIDEO_INIT] ✅ Video Socket server initialized on path /video-socket at ${getPKTTimestamp()}`);
   return io;
 };
