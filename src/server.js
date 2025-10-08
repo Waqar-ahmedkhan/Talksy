@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
 // ✅ Initialize all Socket.IO instances
-const chatIo = initChatSocket(server, { path: "/chat-socket" });
+const chatIo = initChatSocket(server);
 const videoIo = initVideoSocket(server);
 const audioIo = initAudioSocket(server);
 const groupIo = initGroupSocket(server); // ✅ Do NOT pass options here — path is set inside
