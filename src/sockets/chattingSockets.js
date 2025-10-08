@@ -209,20 +209,23 @@ export const initChatSocket = (server) => {
           return;
         }
 
-        // Validate receiver profile, with fallback to create if User exists
+        // Validate receiver profile, with fallback to find or create
         let receiverProfile = await Profile.findById(data.receiverId);
         if (!receiverProfile) {
-          const user = await User.findById(data.receiverId); // Check if client sent User._id by mistake
+          const user = await User.findById(data.receiverId); // Check if client sent User._id
           if (user) {
-            // Create minimal Profile if User exists (fallback)
-            receiverProfile = await Profile.create({
-              phone: user.phone,
-              displayName: user.displayName,
-              randomNumber: Math.random().toString(36).substring(2, 10), // Generate random
-              isVisible: false,
-              isNumberVisible: false,
-              avatarUrl: "",
-            });
+            // Check for existing Profile by phone to avoid duplicate
+            receiverProfile = await Profile.findOne({ phone: user.phone });
+            if (!receiverProfile) {
+              receiverProfile = await Profile.create({
+                phone: user.phone,
+                displayName: user.displayName,
+                randomNumber: Math.random().toString(36).substring(2, 10),
+                isVisible: false,
+                isNumberVisible: false,
+                avatarUrl: "",
+              });
+            }
             data.receiverId = receiverProfile._id.toString(); // Update to Profile._id
           } else {
             console.error(`❌ Receiver profile/user not found: receiverId=${data.receiverId} at ${timestamp}`);
@@ -297,14 +300,17 @@ export const initChatSocket = (server) => {
           if (!receiverProfile) {
             const user = await User.findById(receiverId);
             if (user) {
-              receiverProfile = await Profile.create({
-                phone: user.phone,
-                displayName: user.displayName,
-                randomNumber: Math.random().toString(36).substring(2, 10),
-                isVisible: false,
-                isNumberVisible: false,
-                avatarUrl: "",
-              });
+              receiverProfile = await Profile.findOne({ phone: user.phone });
+              if (!receiverProfile) {
+                receiverProfile = await Profile.create({
+                  phone: user.phone,
+                  displayName: user.displayName,
+                  randomNumber: Math.random().toString(36).substring(2, 10),
+                  isVisible: false,
+                  isNumberVisible: false,
+                  avatarUrl: "",
+                });
+              }
               receiverId = receiverProfile._id.toString();
             } else {
               socket.emit("voice_error", { error: "User profile not found" });
@@ -413,14 +419,17 @@ export const initChatSocket = (server) => {
           if (!receiverProfile) {
             const user = await User.findById(receiverId);
             if (user) {
-              receiverProfile = await Profile.create({
-                phone: user.phone,
-                displayName: user.displayName,
-                randomNumber: Math.random().toString(36).substring(2, 10),
-                isVisible: false,
-                isNumberVisible: false,
-                avatarUrl: "",
-              });
+              receiverProfile = await Profile.findOne({ phone: user.phone });
+              if (!receiverProfile) {
+                receiverProfile = await Profile.create({
+                  phone: user.phone,
+                  displayName: user.displayName,
+                  randomNumber: Math.random().toString(36).substring(2, 10),
+                  isVisible: false,
+                  isNumberVisible: false,
+                  avatarUrl: "",
+                });
+              }
               receiverId = receiverProfile._id.toString();
             } else {
               socket.emit("media_error", { error: "Receiver profile not found" });
