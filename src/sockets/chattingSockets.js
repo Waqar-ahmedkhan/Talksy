@@ -245,79 +245,86 @@ export const initChatSocket = (server) => {
     });
 
     /** Send text message */
-    socket.on("send_message", async ({ senderId, receiverId, content }, callback) => {
-      console.log(`📥 Send message received: senderId=${senderId}, receiverId=${receiverId}, content="${content}" at ${logTimestamp()}`);
-      try {
-        if (!senderId || !receiverId || !content || typeof content !== "string" || content.trim() === "" || senderId !== socket.userId) {
-          console.error(`❌ Send message error: Invalid data`, { senderId, receiverId, content, socketUserId: socket.userId });
-          socket.emit("message_error", { error: "Invalid message data or unauthorized sender" });
-          if (callback) callback({ error: "Invalid message data" });
-          return;
-        }
+   socket.on("send_message", async (data, callback) => {
+  const timestamp = moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
+  console.log(`📥 Send message received: senderId=${data.senderId}, receiverId=${data.receiverId}, content="${data.content}" at ${timestamp}`);
 
-        const senderProfile = await Profile.findById(senderId);
-        const receiverProfile = await Profile.findById(receiverId);
-        if (!senderProfile || !receiverProfile) {
-          console.error(`❌ Send message error: Profile not found`, { senderId, receiverId });
-          socket.emit("message_error", { error: "User profile not found" });
-          if (callback) callback({ error: "User profile not found" });
-          return;
-        }
+  try {
+    if (!data.senderId || !data.receiverId || !data.content || data.senderId !== socket.userId) {
+      console.error(`❌ Invalid message data: senderId=${data.senderId}, receiverId=${data.receiverId}, content=${data.content}, socket.userId=${socket.userId}`);
+      socket.emit("message_error", { error: "Invalid message data or unauthorized sender" });
+      if (callback) callback({ error: "Invalid message data" });
+      return;
+    }
 
-        const blocked = await Block.findOne({
-          $or: [
-            { blockerId: receiverId, blockedId: senderId },
-            { blockerId: senderId, blockedId: receiverId },
-          ],
-        });
-        if (blocked) {
-          console.log(`🚫 Send message blocked: senderId=${senderId}, receiverId=${receiverId}`);
-          socket.emit("message_error", { error: "User is blocked" });
-          if (callback) callback({ error: "User is blocked" });
-          return;
-        }
+    const senderProfile = await Profile.findById(data.senderId);
+    if (!senderProfile) {
+      console.error(`❌ Sender profile not found: senderId=${data.senderId}`);
+      socket.emit("message_error", { error: "Sender profile not found" });
+      if (callback) callback({ error: "Sender profile not found" });
+      return;
+    }
 
-        const chat = await Chat.create({
-          senderId,
-          receiverId,
-          type: "text",
-          content,
-          status: "sent",
-          deletedFor: [],
-          createdAt: new Date(),
-        });
+    const receiverProfile = await Profile.findById(data.receiverId);
+    if (!receiverProfile) {
+      console.error(`❌ Receiver profile not found: receiverId=${data.receiverId}`);
+      socket.emit("message_error", { error: "Receiver profile not found" });
+      if (callback) callback({ error: "Receiver profile not found" });
+      return;
+    }
 
-        const messageData = {
-          id: chat._id.toString(),
-          senderId: chat.senderId.toString(),
-          receiverId: chat.receiverId.toString(),
-          content: chat.content,
-          type: chat.type,
-          timestamp: chat.createdAt.toISOString(),
-          status: chat.status,
-          duration: chat.duration || 0,
-        };
-
-        const receiverSocket = onlineUsers.get(receiverId);
-        if (receiverSocket) {
-          io.to(receiverSocket).emit("receive_message", messageData);
-          chat.status = "delivered";
-          await chat.save();
-          messageData.status = "delivered";
-          console.log(`✅ Message delivered to receiverId=${receiverId}: id=${chat._id}`);
-        } else {
-          console.log(`⚠️ Receiver not online: receiverId=${receiverId}`);
-        }
-
-        socket.emit("message_sent", messageData);
-        if (callback) callback({ status: "success", id: chat._id.toString() });
-        console.log(`✅ Message sent: id=${chat._id}, senderId=${senderId}, receiverId=${receiverId}`);
-      } catch (err) {
-        console.error(`❌ Send message error: ${err.message}`, { senderId, receiverId, content, stack: err.stack });
-        socket.emit("message_error", { error: "Failed to send message" });
-        if (callback) callback({ error: "Server error" });
-      }
+    const isBlocked = await Block.findOne({
+      $or: [
+        { blockerId: data.senderId, blockedId: data.receiverId },
+        { blockerId: data.receiverId, blockedId: data.senderId },
+      ],
     });
+
+    if (isBlocked) {
+      console.error(`❌ User is blocked: senderId=${data.senderId}, receiverId=${data.receiverId}`);
+      socket.emit("message_error", { error: "User is blocked" });
+      if (callback) callback({ error: "User is blocked" });
+      return;
+    }
+
+    const chat = new Chat({
+      senderId: data.senderId,
+      receiverId: data.receiverId,
+      content: data.content,
+      type: "text",
+      status: "sent",
+    });
+
+    await chat.save();
+
+    const messageData = {
+      id: chat._id,
+      senderId: chat.senderId,
+      receiverId: chat.receiverId,
+      content: chat.content,
+      type: chat.type,
+      timestamp: chat.createdAt,
+      status: chat.status,
+      duration: chat.duration || 0,
+    };
+
+    socket.emit("message_sent", messageData);
+    if (onlineUsers[data.receiverId]) {
+      io.to(onlineUsers[data.receiverId]).emit("receive_message", messageData);
+      chat.status = "delivered";
+      await chat.save();
+      messageData.status = "delivered";
+    } else {
+      console.warn(`⚠️ Receiver not online: receiverId=${data.receiverId}`);
+    }
+
+    if (callback) callback({ status: "success", id: chat._id });
+  } catch (error) {
+    console.error(`❌ Send message error: ${error.message}`, { senderId: data.senderId, receiverId: data.receiverId });
+    socket.emit("message_error", { error: "Failed to send message" });
+    if (callback) callback({ error: "Failed to send message" });
+  }
+});
 
     /** Send voice message */
     socket.on("send_voice", async ({ senderId, receiverId, content, duration }, callback) => {
