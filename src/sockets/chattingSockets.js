@@ -12,8 +12,8 @@ export const initChatSocket = (server) => {
   const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] },
     path: "/chat-socket",
-    pingTimeout: 60000, // Increase timeout to 60s to reduce disconnections
-    pingInterval: 25000, // Default heartbeat interval
+    pingTimeout: 60000,
+    pingInterval: 25000,
   });
   const onlineUsers = new Map(); // userId -> socketId
 
@@ -21,11 +21,10 @@ export const initChatSocket = (server) => {
   io.use(async (socket, next) => {
     const token = socket.handshake.auth.token;
     const userId = socket.handshake.query.userId;
-    const logTimestamp = () => new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
+    const logTimestamp = () => moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
 
-    console.log(`🔐 Auth middleware: userId=${userId}, token=${token ? "provided" : "missing"} at ${logTimestamp()}`);
     if (!token || !userId) {
-      console.error(`❌ Auth error: Missing token or userId`, { userId, token });
+      console.error(`❌ Auth error: Missing token or userId at ${logTimestamp()}`, { userId });
       return next(new Error("Authentication error: Token and userId required"));
     }
 
@@ -33,74 +32,58 @@ export const initChatSocket = (server) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const profile = await Profile.findById(userId);
       if (!profile || decoded.phone !== profile.phone) {
-        console.error(`❌ Auth error: Invalid userId=${userId} or token`, { decoded });
+        console.error(`❌ Auth error: Invalid userId=${userId} or token at ${logTimestamp()}`, { decoded });
         return next(new Error("Authentication error: Invalid user or token"));
       }
       socket.userId = userId;
-      console.log(`✅ Auth success: userId=${userId}`);
+      socket.phone = profile.phone; // Store for User lookup
       next();
     } catch (err) {
-      console.error(`❌ Auth error: ${err.message}`, { userId, stack: err.stack });
+      console.error(`❌ Auth error: ${err.message} at ${logTimestamp()}`, { userId });
       return next(new Error("Authentication error: Invalid token"));
     }
   });
 
   io.on("connection", (socket) => {
-    const logTimestamp = () => new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
-    console.log(`⚡ Chat client connected: socketId=${socket.id}, userId=${socket.userId} at ${logTimestamp()}`);
+    const logTimestamp = () => moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
 
     // Handle connection errors
     socket.on("connect_error", (err) => {
-      console.error(`❌ Connection error: ${err.message}`, { socketId: socket.id, stack: err.stack });
+      console.error(`❌ Connection error: ${err.message} at ${logTimestamp()}`, { socketId: socket.id });
     });
 
     /** User joins chat */
     socket.on("join", async (userId) => {
-      console.log(`📥 Join event received: userId=${userId}, socketId=${socket.id} at ${logTimestamp()}`);
       try {
-        if (!userId || userId !== socket.userId) {
-          console.error(`❌ Join error: Invalid or mismatched userId=${userId}, expected=${socket.userId}`);
-          socket.emit("join_error", { error: "Invalid or mismatched user ID" });
+        if (userId !== socket.userId) {
+          socket.emit("join_error", { error: "Invalid user ID" });
           return;
         }
 
-        const profile = await Profile.findById(userId);
-        if (!profile) {
-          console.error(`❌ Join error: Profile not found for userId=${userId}`);
-          socket.emit("join_error", { error: "User profile not found" });
-          return;
-        }
-
-        const user = await User.findOne({ phone: profile.phone });
+        const user = await User.findOne({ phone: socket.phone });
         if (!user) {
-          console.error(`❌ Join error: User not found for phone=${profile.phone}`);
           socket.emit("join_error", { error: "User not found" });
           return;
         }
 
         onlineUsers.set(userId, socket.id);
-        socket.join(userId); // Join user-specific room
+        socket.join(userId);
         await User.findByIdAndUpdate(user._id, { online: true, lastSeen: new Date() });
-        console.log(`✅ User joined: userId=${userId}, socketId=${socket.id}`);
-
         io.emit("presence_update", {
           userId,
           online: true,
           lastSeen: new Date().toISOString(),
         });
       } catch (err) {
-        console.error(`❌ Join error: ${err.message}`, { userId, stack: err.stack });
         socket.emit("join_error", { error: "Server error during join" });
       }
     });
 
-    /** Typing indicator for text */
+    /** Typing indicator */
     socket.on("typing", async ({ senderId, receiverId, typing }) => {
-      console.log(`📥 Typing event received: senderId=${senderId}, receiverId=${receiverId}, typing=${typing} at ${logTimestamp()}`);
       try {
         if (!senderId || !receiverId || typeof typing !== "boolean" || senderId !== socket.userId) {
-          console.error(`❌ Typing error: Invalid data`, { senderId, receiverId, typing, socketUserId: socket.userId });
-          socket.emit("typing_error", { error: "Invalid typing data or unauthorized sender" });
+          socket.emit("typing_error", { error: "Invalid typing data" });
           return;
         }
 
@@ -111,7 +94,6 @@ export const initChatSocket = (server) => {
           ],
         });
         if (blocked) {
-          console.log(`🚫 Typing blocked: senderId=${senderId}, receiverId=${receiverId}`);
           socket.emit("typing_error", { error: "User is blocked" });
           return;
         }
@@ -119,23 +101,17 @@ export const initChatSocket = (server) => {
         const receiverSocket = onlineUsers.get(receiverId);
         if (receiverSocket) {
           io.to(receiverSocket).emit("typing", { senderId, receiverId, typing });
-          console.log(`✅ Typing event emitted to receiverId=${receiverId}`);
-        } else {
-          console.log(`⚠️ Receiver not online: receiverId=${receiverId}`);
         }
       } catch (err) {
-        console.error(`❌ Typing error: ${err.message}`, { senderId, receiverId, stack: err.stack });
         socket.emit("typing_error", { error: "Server error during typing" });
       }
     });
 
     /** Recording audio indicator */
     socket.on("recording_audio", async ({ senderId, receiverId, recording }) => {
-      console.log(`📥 Recording audio event received: senderId=${senderId}, receiverId=${receiverId}, recording=${recording} at ${logTimestamp()}`);
       try {
         if (!senderId || !receiverId || typeof recording !== "boolean" || senderId !== socket.userId) {
-          console.error(`❌ Recording audio error: Invalid data`, { senderId, receiverId, recording, socketUserId: socket.userId });
-          socket.emit("recording_audio_error", { error: "Invalid recording data or unauthorized sender" });
+          socket.emit("recording_audio_error", { error: "Invalid recording data" });
           return;
         }
 
@@ -146,7 +122,6 @@ export const initChatSocket = (server) => {
           ],
         });
         if (blocked) {
-          console.log(`🚫 Recording audio blocked: senderId=${senderId}, receiverId=${receiverId}`);
           socket.emit("recording_audio_error", { error: "User is blocked" });
           return;
         }
@@ -154,23 +129,17 @@ export const initChatSocket = (server) => {
         const receiverSocket = onlineUsers.get(receiverId);
         if (receiverSocket) {
           io.to(receiverSocket).emit("recording_audio", { senderId, receiverId, recording });
-          console.log(`✅ Recording audio event emitted to receiverId=${receiverId}`);
-        } else {
-          console.log(`⚠️ Receiver not online: receiverId=${receiverId}`);
         }
       } catch (err) {
-        console.error(`❌ Recording audio error: ${err.message}`, { senderId, receiverId, stack: err.stack });
         socket.emit("recording_audio_error", { error: "Server error during recording" });
       }
     });
 
     /** Uploading media indicator */
     socket.on("uploading_media", async ({ senderId, receiverId, groupId, channelId, uploading }) => {
-      console.log(`📥 Uploading media event received: senderId=${senderId}, receiverId=${receiverId}, groupId=${groupId}, channelId=${channelId}, uploading=${uploading} at ${logTimestamp()}`);
       try {
         if (!senderId || (!receiverId && !groupId && !channelId) || typeof uploading !== "boolean" || senderId !== socket.userId) {
-          console.error(`❌ Uploading media error: Invalid data`, { senderId, receiverId, groupId, channelId, uploading, socketUserId: socket.userId });
-          socket.emit("uploading_media_error", { error: "Invalid uploading data or unauthorized sender" });
+          socket.emit("uploading_media_error", { error: "Invalid uploading data" });
           return;
         }
 
@@ -182,7 +151,6 @@ export const initChatSocket = (server) => {
             ],
           });
           if (blocked) {
-            console.log(`🚫 Uploading media blocked: senderId=${senderId}, receiverId=${receiverId}`);
             socket.emit("uploading_media_error", { error: "User is blocked" });
             return;
           }
@@ -190,57 +158,35 @@ export const initChatSocket = (server) => {
           const receiverSocket = onlineUsers.get(receiverId);
           if (receiverSocket) {
             io.to(receiverSocket).emit("uploading_media", { senderId, receiverId, uploading });
-            console.log(`✅ Uploading media event emitted to receiverId=${receiverId}`);
-          } else {
-            console.log(`⚠️ Receiver not online: receiverId=${receiverId}`);
           }
         } else if (groupId) {
           const group = await Group.findById(groupId);
-          if (!group) {
-            console.error(`❌ Uploading media error: Group not found, groupId=${groupId}`);
-            socket.emit("uploading_media_error", { error: "Group not found" });
+          if (!group || !group.members.includes(senderId)) {
+            socket.emit("uploading_media_error", { error: group ? "Sender not in group" : "Group not found" });
             return;
           }
-          if (!group.members.includes(senderId)) {
-            console.error(`❌ Uploading media error: Sender not in group, senderId=${senderId}, groupId=${groupId}`);
-            socket.emit("uploading_media_error", { error: "Sender not in group" });
-            return;
-          }
-          const memberIds = group.members.map(id => id.toString());
-          memberIds.forEach(memberId => {
-            if (memberId !== senderId) {
+          group.members
+            .map(id => id.toString())
+            .filter(id => id !== senderId)
+            .forEach(memberId => {
               const memberSocket = onlineUsers.get(memberId);
-              if (memberSocket) {
-                io.to(memberSocket).emit("uploading_media", { senderId, groupId, uploading });
-                console.log(`✅ Uploading media event emitted to group memberId=${memberId}`);
-              }
-            }
-          });
+              if (memberSocket) io.to(memberSocket).emit("uploading_media", { senderId, groupId, uploading });
+            });
         } else if (channelId) {
           const channel = await Channel.findById(channelId);
-          if (!channel) {
-            console.error(`❌ Uploading media error: Channel not found, channelId=${channelId}`);
-            socket.emit("uploading_media_error", { error: "Channel not found" });
+          if (!channel || !channel.members.includes(senderId)) {
+            socket.emit("uploading_media_error", { error: channel ? "Sender not in channel" : "Channel not found" });
             return;
           }
-          if (!channel.members.includes(senderId)) {
-            console.error(`❌ Uploading media error: Sender not in channel, senderId=${senderId}, channelId=${channelId}`);
-            socket.emit("uploading_media_error", { error: "Sender not in channel" });
-            return;
-          }
-          const memberIds = channel.members.map(id => id.toString());
-          memberIds.forEach(memberId => {
-            if (memberId !== senderId) {
+          channel.members
+            .map(id => id.toString())
+            .filter(id => id !== senderId)
+            .forEach(memberId => {
               const memberSocket = onlineUsers.get(memberId);
-              if (memberSocket) {
-                io.to(memberSocket).emit("uploading_media", { senderId, channelId, uploading });
-                console.log(`✅ Uploading media event emitted to channel memberId=${memberId}`);
-              }
-            }
-          });
+              if (memberSocket) io.to(memberSocket).emit("uploading_media", { senderId, channelId, uploading });
+            });
         }
       } catch (err) {
-        console.error(`❌ Uploading media error: ${err.message}`, { senderId, receiverId, groupId, channelId, stack: err.stack });
         socket.emit("uploading_media_error", { error: "Server error during uploading" });
       }
     });
@@ -248,30 +194,42 @@ export const initChatSocket = (server) => {
     /** Send text message */
     socket.on("send_message", async (data, callback) => {
       const timestamp = moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
-      console.log(`📥 Send message received: senderId=${data.senderId}, receiverId=${data.receiverId}, content="${data.content}" at ${timestamp}`);
-
       try {
         if (!data.senderId || !data.receiverId || !data.content || data.senderId !== socket.userId) {
-          console.error(`❌ Invalid message data: senderId=${data.senderId}, receiverId=${data.receiverId}, content=${data.content}, socket.userId=${socket.userId}`);
-          socket.emit("message_error", { error: "Invalid message data or unauthorized sender" });
+          socket.emit("message_error", { error: "Invalid message data" });
           if (callback) callback({ error: "Invalid message data" });
           return;
         }
 
+        // Validate sender profile
         const senderProfile = await Profile.findById(data.senderId);
         if (!senderProfile) {
-          console.error(`❌ Sender profile not found: senderId=${data.senderId}`);
           socket.emit("message_error", { error: "Sender profile not found" });
           if (callback) callback({ error: "Sender profile not found" });
           return;
         }
 
-        const receiverProfile = await Profile.findById(data.receiverId);
+        // Validate receiver profile, with fallback to create if User exists
+        let receiverProfile = await Profile.findById(data.receiverId);
         if (!receiverProfile) {
-          console.error(`❌ Receiver profile not found: receiverId=${data.receiverId}`);
-          socket.emit("message_error", { error: "Receiver profile not found" });
-          if (callback) callback({ error: "Receiver profile not found" });
-          return;
+          const user = await User.findById(data.receiverId); // Check if client sent User._id by mistake
+          if (user) {
+            // Create minimal Profile if User exists (fallback)
+            receiverProfile = await Profile.create({
+              phone: user.phone,
+              displayName: user.displayName,
+              randomNumber: Math.random().toString(36).substring(2, 10), // Generate random
+              isVisible: false,
+              isNumberVisible: false,
+              avatarUrl: "",
+            });
+            data.receiverId = receiverProfile._id.toString(); // Update to Profile._id
+          } else {
+            console.error(`❌ Receiver profile/user not found: receiverId=${data.receiverId} at ${timestamp}`);
+            socket.emit("message_error", { error: "Receiver profile not found" });
+            if (callback) callback({ error: "Receiver profile not found" });
+            return;
+          }
         }
 
         const isBlocked = await Block.findOne({
@@ -280,9 +238,7 @@ export const initChatSocket = (server) => {
             { blockerId: data.receiverId, blockedId: data.senderId },
           ],
         });
-
         if (isBlocked) {
-          console.error(`❌ User is blocked: senderId=${data.senderId}, receiverId=${data.receiverId}`);
           socket.emit("message_error", { error: "User is blocked" });
           if (callback) callback({ error: "User is blocked" });
           return;
@@ -299,29 +255,28 @@ export const initChatSocket = (server) => {
         await chat.save();
 
         const messageData = {
-          id: chat._id,
-          senderId: chat.senderId,
-          receiverId: chat.receiverId,
+          id: chat._id.toString(),
+          senderId: chat.senderId.toString(),
+          receiverId: chat.receiverId.toString(),
           content: chat.content,
           type: chat.type,
-          timestamp: chat.createdAt,
+          timestamp: chat.createdAt.toISOString(),
           status: chat.status,
           duration: chat.duration || 0,
         };
 
         socket.emit("message_sent", messageData);
-        if (onlineUsers[data.receiverId]) {
-          io.to(onlineUsers[data.receiverId]).emit("receive_message", messageData);
+        const receiverSocket = onlineUsers.get(data.receiverId);
+        if (receiverSocket) {
+          io.to(receiverSocket).emit("receive_message", messageData);
           chat.status = "delivered";
           await chat.save();
           messageData.status = "delivered";
-        } else {
-          console.warn(`⚠️ Receiver not online: receiverId=${data.receiverId}`);
         }
 
-        if (callback) callback({ status: "success", id: chat._id });
-      } catch (error) {
-        console.error(`❌ Send message error: ${error.message}`, { senderId: data.senderId, receiverId: data.receiverId });
+        if (callback) callback({ status: "success", id: chat._id.toString() });
+      } catch (err) {
+        console.error(`❌ Send message error: ${err.message} at ${timestamp}`, { senderId: data.senderId, receiverId: data.receiverId });
         socket.emit("message_error", { error: "Failed to send message" });
         if (callback) callback({ error: "Failed to send message" });
       }
@@ -329,28 +284,38 @@ export const initChatSocket = (server) => {
 
     /** Send voice message */
     socket.on("send_voice", async ({ senderId, receiverId, content, duration }, callback) => {
-      console.log(`📥 Send voice received: senderId=${senderId}, receiverId=${receiverId}, content="${content}", duration=${duration} at ${logTimestamp()}`);
       try {
-        if (!senderId || !receiverId || !content || typeof content !== "string" || content.trim() === "" || senderId !== socket.userId) {
-          console.error(`❌ Send voice error: Invalid content`, { senderId, receiverId, content, duration, socketUserId: socket.userId });
-          socket.emit("voice_error", { error: "Voice content URL is required or unauthorized sender" });
-          if (callback) callback({ error: "Voice content URL is required" });
-          return;
-        }
-        if (typeof duration !== "number" || duration <= 0 || duration > 180) {
-          console.error(`❌ Send voice error: Invalid duration=${duration}`);
-          socket.emit("voice_error", { error: "Voice duration invalid (max 3 minutes)" });
-          if (callback) callback({ error: "Voice duration invalid (max 3 minutes)" });
+        if (!senderId || !receiverId || !content || typeof content !== "string" || content.trim() === "" || senderId !== socket.userId || typeof duration !== "number" || duration <= 0 || duration > 180) {
+          socket.emit("voice_error", { error: "Invalid voice data or duration (max 3 minutes)" });
+          if (callback) callback({ error: "Invalid voice data or duration" });
           return;
         }
 
         const senderProfile = await Profile.findById(senderId);
-        const receiverProfile = await Profile.findById(receiverId);
+        let receiverProfile = await Profile.findById(receiverId);
         if (!senderProfile || !receiverProfile) {
-          console.error(`❌ Send voice error: Profile not found`, { senderId, receiverId });
-          socket.emit("voice_error", { error: "User profile not found" });
-          if (callback) callback({ error: "User profile not found" });
-          return;
+          if (!receiverProfile) {
+            const user = await User.findById(receiverId);
+            if (user) {
+              receiverProfile = await Profile.create({
+                phone: user.phone,
+                displayName: user.displayName,
+                randomNumber: Math.random().toString(36).substring(2, 10),
+                isVisible: false,
+                isNumberVisible: false,
+                avatarUrl: "",
+              });
+              receiverId = receiverProfile._id.toString();
+            } else {
+              socket.emit("voice_error", { error: "User profile not found" });
+              if (callback) callback({ error: "User profile not found" });
+              return;
+            }
+          } else {
+            socket.emit("voice_error", { error: "Sender profile not found" });
+            if (callback) callback({ error: "Sender profile not found" });
+            return;
+          }
         }
 
         const blocked = await Block.findOne({
@@ -360,7 +325,6 @@ export const initChatSocket = (server) => {
           ],
         });
         if (blocked) {
-          console.log(`🚫 Send voice blocked: senderId=${senderId}, receiverId=${receiverId}`);
           socket.emit("voice_error", { error: "User is blocked" });
           if (callback) callback({ error: "User is blocked" });
           return;
@@ -374,7 +338,6 @@ export const initChatSocket = (server) => {
           duration,
           status: "sent",
           deletedFor: [],
-          createdAt: new Date(),
         });
 
         const voiceData = {
@@ -394,16 +357,11 @@ export const initChatSocket = (server) => {
           chat.status = "delivered";
           await chat.save();
           voiceData.status = "delivered";
-          console.log(`✅ Voice delivered to receiverId=${receiverId}: id=${chat._id}`);
-        } else {
-          console.log(`⚠️ Receiver not online: receiverId=${receiverId}`);
         }
 
         socket.emit("voice_sent", voiceData);
         if (callback) callback({ status: "success", id: chat._id.toString() });
-        console.log(`✅ Voice sent: id=${chat._id}, senderId=${senderId}, receiverId=${receiverId}`);
       } catch (err) {
-        console.error(`❌ Send voice error: ${err.message}`, { senderId, receiverId, content, duration, stack: err.stack });
         socket.emit("voice_error", { error: "Failed to send voice message" });
         if (callback) callback({ error: "Server error" });
       }
@@ -411,18 +369,15 @@ export const initChatSocket = (server) => {
 
     /** Send media (images, videos, documents) */
     socket.on("send_media", async ({ senderId, receiverId, groupId, channelId, files }, callback) => {
-      console.log(`📥 Send media received: senderId=${senderId}, receiverId=${receiverId}, groupId=${groupId}, channelId=${channelId}, files=${JSON.stringify(files)} at ${logTimestamp()}`);
       try {
         if (!senderId || (!receiverId && !groupId && !channelId) || !files || !Array.isArray(files) || files.length === 0 || files.length > 10 || senderId !== socket.userId) {
-          console.error(`❌ Send media error: Invalid data`, { senderId, receiverId, groupId, channelId, files, socketUserId: socket.userId });
-          socket.emit("media_error", { error: "Invalid media data (1-10 files required) or unauthorized sender" });
+          socket.emit("media_error", { error: "Invalid media data (1-10 files required)" });
           if (callback) callback({ error: "Invalid media data" });
           return;
         }
 
         const senderProfile = await Profile.findById(senderId);
         if (!senderProfile) {
-          console.error(`❌ Send media error: Sender profile not found, senderId=${senderId}`);
           socket.emit("media_error", { error: "Sender profile not found" });
           if (callback) callback({ error: "Sender profile not found" });
           return;
@@ -431,44 +386,22 @@ export const initChatSocket = (server) => {
         // Validate files
         for (const file of files) {
           const { type, url, fileType, duration, fileName } = file;
-          if (!["image", "video", "file"].includes(type)) {
-            console.error(`❌ Send media error: Invalid type=${type}`);
-            socket.emit("media_error", { error: `Invalid media type: ${type}` });
-            if (callback) callback({ error: `Invalid media type: ${type}` });
-            return;
-          }
-          if (!url || typeof url !== "string" || url.trim() === "") {
-            console.error(`❌ Send media error: Invalid URL`, { file });
-            socket.emit("media_error", { error: "Each file must have a valid URL" });
-            if (callback) callback({ error: "Each file must have a valid URL" });
-            return;
-          }
-          if (!fileType || typeof fileType !== "string") {
-            console.error(`❌ Send media error: Invalid fileType`, { file });
-            socket.emit("media_error", { error: "Each file must have a valid MIME type" });
-            if (callback) callback({ error: "Each file must have a valid MIME type" });
+          if (!["image", "video", "file"].includes(type) || !url || typeof url !== "string" || url.trim() === "" || !fileType || typeof fileType !== "string") {
+            socket.emit("media_error", { error: `Invalid file data: ${type}` });
+            if (callback) callback({ error: `Invalid file data: ${type}` });
             return;
           }
           if (type === "image" && !fileType.startsWith("image/")) {
-            console.error(`❌ Send media error: Invalid image MIME type=${fileType}`);
             socket.emit("media_error", { error: `Invalid MIME type for image: ${fileType}` });
             if (callback) callback({ error: `Invalid MIME type for image: ${fileType}` });
             return;
           }
-          if (type === "video" && !fileType.startsWith("video/")) {
-            console.error(`❌ Send media error: Invalid video MIME type=${fileType}`);
-            socket.emit("media_error", { error: `Invalid MIME type for video: ${fileType}` });
-            if (callback) callback({ error: `Invalid MIME type for video: ${fileType}` });
-            return;
-          }
-          if (type === "video" && (typeof duration !== "number" || duration <= 0 || duration > 300)) {
-            console.error(`❌ Send media error: Invalid video duration=${duration}`);
-            socket.emit("media_error", { error: "Video duration invalid (max 5 minutes)" });
-            if (callback) callback({ error: "Video duration invalid (max 5 minutes)" });
+          if (type === "video" && (!fileType.startsWith("video/") || typeof duration !== "number" || duration <= 0 || duration > 300)) {
+            socket.emit("media_error", { error: "Invalid video MIME type or duration (max 5 minutes)" });
+            if (callback) callback({ error: "Invalid video MIME type or duration" });
             return;
           }
           if (type === "file" && (!fileName || typeof fileName !== "string")) {
-            console.error(`❌ Send media error: Missing fileName for document`, { file });
             socket.emit("media_error", { error: "Documents must have a file name" });
             if (callback) callback({ error: "Documents must have a file name" });
             return;
@@ -476,12 +409,24 @@ export const initChatSocket = (server) => {
         }
 
         if (receiverId) {
-          const receiverProfile = await Profile.findById(receiverId);
+          let receiverProfile = await Profile.findById(receiverId);
           if (!receiverProfile) {
-            console.error(`❌ Send media error: Receiver profile not found, receiverId=${receiverId}`);
-            socket.emit("media_error", { error: "Receiver profile not found" });
-            if (callback) callback({ error: "Receiver profile not found" });
-            return;
+            const user = await User.findById(receiverId);
+            if (user) {
+              receiverProfile = await Profile.create({
+                phone: user.phone,
+                displayName: user.displayName,
+                randomNumber: Math.random().toString(36).substring(2, 10),
+                isVisible: false,
+                isNumberVisible: false,
+                avatarUrl: "",
+              });
+              receiverId = receiverProfile._id.toString();
+            } else {
+              socket.emit("media_error", { error: "Receiver profile not found" });
+              if (callback) callback({ error: "Receiver profile not found" });
+              return;
+            }
           }
 
           const blocked = await Block.findOne({
@@ -491,60 +436,43 @@ export const initChatSocket = (server) => {
             ],
           });
           if (blocked) {
-            console.log(`🚫 Send media blocked: senderId=${senderId}, receiverId=${receiverId}`);
             socket.emit("media_error", { error: "User is blocked" });
             if (callback) callback({ error: "User is blocked" });
             return;
           }
         } else if (groupId) {
           const group = await Group.findById(groupId);
-          if (!group) {
-            console.error(`❌ Send media error: Group not found, groupId=${groupId}`);
-            socket.emit("media_error", { error: "Group not found" });
-            if (callback) callback({ error: "Group not found" });
-            return;
-          }
-          if (!group.members.includes(senderId)) {
-            console.error(`❌ Send media error: Sender not in group, senderId=${senderId}, groupId=${groupId}`);
-            socket.emit("media_error", { error: "Sender not in group" });
-            if (callback) callback({ error: "Sender not in group" });
+          if (!group || !group.members.includes(senderId)) {
+            socket.emit("media_error", { error: group ? "Sender not in group" : "Group not found" });
+            if (callback) callback({ error: group ? "Sender not in group" : "Group not found" });
             return;
           }
         } else if (channelId) {
           const channel = await Channel.findById(channelId);
-          if (!channel) {
-            console.error(`❌ Send media error: Channel not found, channelId=${channelId}`);
-            socket.emit("media_error", { error: "Channel not found" });
-            if (callback) callback({ error: "Channel not found" });
-            return;
-          }
-          if (!channel.members.includes(senderId)) {
-            console.error(`❌ Send media error: Sender not in channel, senderId=${senderId}, channelId=${channelId}`);
-            socket.emit("media_error", { error: "Sender not in channel" });
-            if (callback) callback({ error: "Sender not in channel" });
+          if (!channel || !channel.members.includes(senderId)) {
+            socket.emit("media_error", { error: channel ? "Sender not in channel" : "Channel not found" });
+            if (callback) callback({ error: channel ? "Sender not in channel" : "Channel not found" });
             return;
           }
         }
 
-        const chats = [];
-        for (const file of files) {
-          const { type, url, fileType, duration, fileName } = file;
-          const chat = await Chat.create({
-            senderId,
-            receiverId: receiverId || undefined,
-            groupId: groupId || undefined,
-            channelId: channelId || undefined,
-            type,
-            content: url,
-            fileType,
-            fileName: type === "file" ? fileName : undefined,
-            duration: type === "video" ? duration : 0,
-            status: "sent",
-            deletedFor: [],
-            createdAt: new Date(),
-          });
-          chats.push(chat);
-        }
+        const chats = await Promise.all(
+          files.map(file =>
+            Chat.create({
+              senderId,
+              receiverId: receiverId || undefined,
+              groupId: groupId || undefined,
+              channelId: channelId || undefined,
+              type: file.type,
+              content: file.url,
+              fileType: file.fileType,
+              fileName: file.type === "file" ? file.fileName : undefined,
+              duration: file.type === "video" ? file.duration : 0,
+              status: "sent",
+              deletedFor: [],
+            })
+          )
+        );
 
         const payload = chats.map(chat => ({
           id: chat._id.toString(),
@@ -569,23 +497,17 @@ export const initChatSocket = (server) => {
               chat.status = "delivered";
               await chat.save();
             });
-            console.log(`✅ Media delivered to receiverId=${receiverId}: ids=${chats.map(c => c._id).join(",")}`);
-          } else {
-            console.log(`⚠️ Receiver not online: receiverId=${receiverId}`);
           }
         } else if (groupId) {
           const group = await Group.findById(groupId);
           if (group) {
-            const memberIds = group.members.map(id => id.toString());
-            memberIds.forEach(memberId => {
-              if (memberId !== senderId) {
+            group.members
+              .map(id => id.toString())
+              .filter(id => id !== senderId)
+              .forEach(memberId => {
                 const memberSocket = onlineUsers.get(memberId);
-                if (memberSocket) {
-                  payload.forEach(item => io.to(memberSocket).emit("receive_media", item));
-                  console.log(`✅ Media delivered to group memberId=${memberId}: ids=${chats.map(c => c._id).join(",")}`);
-                }
-              }
-            });
+                if (memberSocket) payload.forEach(item => io.to(memberSocket).emit("receive_media", item));
+              });
             chats.forEach(async chat => {
               chat.status = "delivered";
               await chat.save();
@@ -594,16 +516,13 @@ export const initChatSocket = (server) => {
         } else if (channelId) {
           const channel = await Channel.findById(channelId);
           if (channel) {
-            const memberIds = channel.members.map(id => id.toString());
-            memberIds.forEach(memberId => {
-              if (memberId !== senderId) {
+            channel.members
+              .map(id => id.toString())
+              .filter(id => id !== senderId)
+              .forEach(memberId => {
                 const memberSocket = onlineUsers.get(memberId);
-                if (memberSocket) {
-                  payload.forEach(item => io.to(memberSocket).emit("receive_media", item));
-                  console.log(`✅ Media delivered to channel memberId=${memberId}: ids=${chats.map(c => c._id).join(",")}`);
-                }
-              }
-            });
+                if (memberSocket) payload.forEach(item => io.to(memberSocket).emit("receive_media", item));
+              });
             chats.forEach(async chat => {
               chat.status = "delivered";
               await chat.save();
@@ -613,9 +532,7 @@ export const initChatSocket = (server) => {
 
         payload.forEach(item => socket.emit("media_sent", item));
         if (callback) callback({ status: "success", ids: chats.map(c => c._id.toString()) });
-        console.log(`✅ Media sent: senderId=${senderId}, ids=${chats.map(c => c._id).join(",")}`);
       } catch (err) {
-        console.error(`❌ Send media error: ${err.message}`, { senderId, receiverId, groupId, channelId, files, stack: err.stack });
         socket.emit("media_error", { error: "Failed to send media" });
         if (callback) callback({ error: "Server error" });
       }
@@ -623,59 +540,45 @@ export const initChatSocket = (server) => {
 
     /** Read message */
     socket.on("read_message", async ({ chatId, readerId }) => {
-      console.log(`📥 Read message received: chatId=${chatId}, readerId=${readerId} at ${logTimestamp()}`);
       try {
         if (!chatId || !readerId || readerId !== socket.userId) {
-          console.error(`❌ Read message error: Invalid data`, { chatId, readerId, socketUserId: socket.userId });
-          socket.emit("message_error", { error: "Invalid chat or reader ID or unauthorized reader" });
+          socket.emit("message_error", { error: "Invalid chat or reader ID" });
           return;
         }
 
         const chat = await Chat.findById(chatId);
-        if (!chat) {
-          console.error(`❌ Read message error: Chat not found, chatId=${chatId}`);
-          socket.emit("message_error", { error: "Message not found" });
-          return;
-        }
-        if (chat.deletedFor.includes(readerId)) {
-          console.log(`🚫 Read message ignored: Message deleted for readerId=${readerId}, chatId=${chatId}`);
+        if (!chat || chat.deletedFor.includes(readerId)) {
+          socket.emit("message_error", { error: chat ? "Message deleted" : "Message not found" });
           return;
         }
 
         chat.status = "read";
         await chat.save();
-        console.log(`✅ Message marked as read: chatId=${chatId}, readerId=${readerId}`);
 
         const senderSocket = onlineUsers.get(chat.senderId.toString());
         if (senderSocket) {
           io.to(senderSocket).emit("message_read", { id: chatId });
-          console.log(`✅ Read event emitted to senderId=${chat.senderId}`);
         }
       } catch (err) {
-        console.error(`❌ Read message error: ${err.message}`, { chatId, readerId, stack: err.stack });
         socket.emit("message_error", { error: "Failed to mark message as read" });
       }
     });
 
     /** Delete message */
     socket.on("delete_message", async ({ chatId, userId, forEveryone }) => {
-      console.log(`📥 Delete message received: chatId=${chatId}, userId=${userId}, forEveryone=${forEveryone} at ${logTimestamp()}`);
       try {
         if (!chatId || !userId || userId !== socket.userId) {
-          console.error(`❌ Delete message error: Invalid data`, { chatId, userId, forEveryone, socketUserId: socket.userId });
-          socket.emit("delete_error", { error: "Invalid chat or user ID or unauthorized user" });
+          socket.emit("delete_error", { error: "Invalid chat or user ID" });
           return;
         }
 
         const chat = await Chat.findById(chatId);
         if (!chat) {
-          console.error(`❌ Delete message error: Chat not found, chatId=${chatId}`);
           socket.emit("delete_error", { error: "Message not found" });
           return;
         }
 
         if (forEveryone && chat.senderId.toString() !== userId) {
-          console.error(`❌ Delete message error: Only sender can delete for everyone`, { chatId, userId });
           socket.emit("delete_error", { error: "Only sender can delete for everyone" });
           return;
         }
@@ -692,7 +595,6 @@ export const initChatSocket = (server) => {
           chat.deletedFor.push(userId);
         }
         await chat.save();
-        console.log(`✅ Message deleted: chatId=${chatId}, userId=${userId}, forEveryone=${forEveryone}`);
 
         const recipients = new Set();
         if (chat.receiverId) {
@@ -702,19 +604,25 @@ export const initChatSocket = (server) => {
         if (chat.groupId) {
           const group = await Group.findById(chat.groupId);
           if (group) {
-            group.members.forEach(memberId => {
-              const memberSocket = onlineUsers.get(memberId.toString());
-              if (memberSocket && memberId.toString() !== userId) recipients.add(memberSocket);
-            });
+            group.members
+              .map(id => id.toString())
+              .filter(id => id !== userId)
+              .forEach(memberId => {
+                const memberSocket = onlineUsers.get(memberId);
+                if (memberSocket) recipients.add(memberSocket);
+              });
           }
         }
         if (chat.channelId) {
           const channel = await Channel.findById(chat.channelId);
           if (channel) {
-            channel.members.forEach(memberId => {
-              const memberSocket = onlineUsers.get(memberId.toString());
-              if (memberSocket && memberId.toString() !== userId) recipients.add(memberSocket);
-            });
+            channel.members
+              .map(id => id.toString())
+              .filter(id => id !== userId)
+              .forEach(memberId => {
+                const memberSocket = onlineUsers.get(memberId);
+                if (memberSocket) recipients.add(memberSocket);
+              });
           }
         }
 
@@ -736,106 +644,83 @@ export const initChatSocket = (server) => {
           status: chat.status,
         };
 
-        recipients.forEach(socketId => {
-          io.to(socketId).emit("message_deleted", deletedMessage);
-          console.log(`✅ Delete event emitted to socketId=${socketId}: chatId=${chatId}`);
-        });
-
+        recipients.forEach(socketId => io.to(socketId).emit("message_deleted", deletedMessage));
         socket.emit("delete_success", { chatId });
-        console.log(`✅ Delete success emitted: chatId=${chatId}, userId=${userId}`);
       } catch (err) {
-        console.error(`❌ Delete message error: ${err.message}`, { chatId, userId, forEveryone, stack: err.stack });
         socket.emit("delete_error", { error: "Failed to delete message" });
       }
     });
 
     /** Block user */
     socket.on("block_user", async ({ blockerId, blockedId }) => {
-      console.log(`📥 Block user received: blockerId=${blockerId}, blockedId=${blockedId} at ${logTimestamp()}`);
       try {
         if (!blockerId || !blockedId || blockerId === blockedId || blockerId !== socket.userId) {
-          console.error(`❌ Block user error: Invalid data`, { blockerId, blockedId, socketUserId: socket.userId });
-          socket.emit("block_error", { error: "Invalid blocker or blocked ID or unauthorized blocker" });
+          socket.emit("block_error", { error: "Invalid blocker or blocked ID" });
           return;
         }
 
         const existingBlock = await Block.findOne({ blockerId, blockedId });
         if (existingBlock) {
-          console.log(`⚠️ Block user ignored: Already blocked`, { blockerId, blockedId });
           socket.emit("block_error", { error: "User already blocked" });
           return;
         }
 
         await Block.create({ blockerId, blockedId });
-        console.log(`✅ User blocked: blockerId=${blockerId}, blockedId=${blockedId}`);
 
         const blockedSocket = onlineUsers.get(blockedId);
         if (blockedSocket) {
           io.to(blockedSocket).emit("blocked_update", { blockerId, blocked: true });
-          console.log(`✅ Blocked update emitted to blockedId=${blockedId}`);
         }
 
         socket.emit("block_success", { blockedId });
-        console.log(`✅ Block success emitted: blockerId=${blockerId}, blockedId=${blockedId}`);
       } catch (err) {
-        console.error(`❌ Block user error: ${err.message}`, { blockerId, blockedId, stack: err.stack });
         socket.emit("block_error", { error: "Failed to block user" });
       }
     });
 
     /** Unblock user */
     socket.on("unblock_user", async ({ blockerId, blockedId }) => {
-      console.log(`📥 Unblock user received: blockerId=${blockerId}, blockedId=${blockedId} at ${logTimestamp()}`);
       try {
         if (!blockerId || !blockedId || blockerId !== socket.userId) {
-          console.error(`❌ Unblock user error: Invalid data`, { blockerId, blockedId, socketUserId: socket.userId });
-          socket.emit("unblock_error", { error: "Invalid blocker or blocked ID or unauthorized blocker" });
+          socket.emit("unblock_error", { error: "Invalid blocker or blocked ID" });
           return;
         }
 
         const result = await Block.deleteOne({ blockerId, blockedId });
         if (result.deletedCount === 0) {
-          console.error(`❌ Unblock user error: Block not found`, { blockerId, blockedId });
           socket.emit("unblock_error", { error: "Block not found" });
           return;
         }
 
-        console.log(`✅ User unblocked: blockerId=${blockerId}, blockedId=${blockedId}`);
-
         const unblockedSocket = onlineUsers.get(blockedId);
         if (unblockedSocket) {
           io.to(unblockedSocket).emit("blocked_update", { blockerId, blocked: false });
-          console.log(`✅ Unblocked update emitted to blockedId=${blockedId}`);
         }
 
         socket.emit("unblock_success", { blockedId });
-        console.log(`✅ Unblock success emitted: blockerId=${blockerId}, blockedId=${blockedId}`);
       } catch (err) {
-        console.error(`❌ Unblock user error: ${err.message}`, { blockerId, blockedId, stack: err.stack });
         socket.emit("unblock_error", { error: "Failed to unblock user" });
       }
     });
 
     /** Disconnect */
     socket.on("disconnect", async () => {
-      console.log(`❌ Chat client disconnected: socketId=${socket.id}, userId=${socket.userId} at ${logTimestamp()}`);
       try {
         if (socket.userId && onlineUsers.get(socket.userId) === socket.id) {
           onlineUsers.delete(socket.userId);
-          const user = await User.findById(socket.userId);
+          const user = await User.findOne({ phone: socket.phone });
           if (user) {
             const now = new Date();
-            await User.findByIdAndUpdate(socket.userId, { online: false, lastSeen: now });
+            await User.findByIdAndUpdate(user._id, { online: false, lastSeen: now });
             io.emit("presence_update", {
               userId: socket.userId,
               online: false,
               lastSeen: now.toISOString(),
             });
-            console.log(`✅ User disconnected: userId=${socket.userId}, lastSeen=${now.toISOString()}`);
           }
         }
       } catch (err) {
-        console.error(`❌ Disconnect error: ${err.message}`, { socketId: socket.id, userId: socket.userId, stack: err.stack });
+        console.error(`❌ Disconnect error: ${err.message} at ${logTimestamp()}`, { socketId: socket.id, userId: socket.userId });
       }
     });
   });
