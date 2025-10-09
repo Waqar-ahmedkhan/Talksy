@@ -680,6 +680,7 @@ export const getProfilesFromContacts = async (req, res) => {
     const { contacts } = req.body;
     const userId = req.user._id;
 
+    // Validate contacts array
     if (!Array.isArray(contacts) || contacts.length === 0) {
       return res.status(400).json({ error: "Contacts array is required" });
     }
@@ -687,30 +688,32 @@ export const getProfilesFromContacts = async (req, res) => {
     // Fetch user's contacts to get custom names
     const userContacts = await Contact.find({
       userId,
-      phone: { $in: contacts }
-    }).select('phone customName');
-    
+      phone: { $in: contacts },
+    }).select("phone customName");
+
     // Create a map of phone numbers to custom names
     const contactMap = new Map(
-      userContacts.map(contact => [contact.phone, contact.customName])
+      userContacts.map((contact) => [contact.phone, contact.customName])
     );
 
     // Fetch profiles
-    const matchedProfiles = await Profile.find({ 
-      phone: { $in: contacts } 
+    const matchedProfiles = await Profile.find({
+      phone: { $in: contacts },
     }).select("displayName randomNumber isVisible isNumberVisible avatarUrl createdAt phone");
 
+    // Fetch user status for matched profiles
     const phoneNumbers = matchedProfiles.map((p) => p.phone);
-    const users = await User.find({ 
-      phone: { $in: phoneNumbers } 
+    const users = await User.find({
+      phone: { $in: phoneNumbers },
     }).select("phone online lastSeen");
     const userMap = new Map(users.map((u) => [u.phone, u]));
 
+    // Return formatted response
     return res.json({
       success: true,
       profiles: matchedProfiles.map((profile) => ({
         ...formatProfile(profile, userMap.get(profile.phone)),
-        customName: contactMap.get(profile.phone) || null
+        customName: contactMap.get(profile.phone) || null,
       })),
     });
   } catch (err) {
