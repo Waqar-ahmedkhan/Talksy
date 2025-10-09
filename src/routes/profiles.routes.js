@@ -1,34 +1,26 @@
 // routes/profileRoutes.js
-import { Router } from "express";
-import { authMiddleware } from "../middleware/auth.js";
-import {
-  createProfile,
-  getMyProfile,
-  getPublicProfiles,
-  getProfilesFromContacts,
-  getProfileWithChat,
-  getChatList,
-  upsertContact,
-  deleteContact,
-  sendMessage,
-  deleteConversation,
-  deleteMyProfile,
-} from "../controllers/profiles.controller.js";
+import express from "express";
+   import {
+     authenticateToken,
+     createProfile,
+     getMyProfile,
+     getPublicProfiles,
+     getProfilesFromContacts,
+     getProfileWithChat,
+     getChatList, // Added
+   } from "../controllers/profiles.controller.js";
+   
 
-const router = Router();
+ const router = express.Router();
 
-router.use(authMiddleware);
+   // Protected routes
+   router.post("/", authenticateToken, createProfile);                  // Create or update profile
+   router.get("/me", authenticateToken, getMyProfile);                 // Get current user's profile
+   router.post("/contacts", authenticateToken, getProfilesFromContacts); // Get profiles from contacts
+   router.get("/with-chat/:phone", authenticateToken, getProfileWithChat); // Get profile + chat history
+   router.get("/chats", authenticateToken, getChatList);   
 
-router.post("/profiles", createProfile);
-router.get("/profile/me", getMyProfile);
-router.get("/profiles/public", getPublicProfiles);
-router.post("/profiles/contacts", getProfilesFromContacts);
-router.get("/profile/:phone/chat", getProfileWithChat);
-router.get("/chats", getChatList);
-router.post("/contacts", upsertContact);
-router.delete("/contacts/:phone", deleteContact);
-router.post("/send-message", sendMessage);
-router.delete("/conversation/:phone", deleteConversation);
-router.delete("/profile/me", deleteMyProfile);
+   // Public routes
+   router.get("/public", getPublicProfiles); 
 
 export default router;
