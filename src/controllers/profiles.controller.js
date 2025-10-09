@@ -677,48 +677,81 @@ export const getPublicProfiles = async (req, res) => {
 // controllers/contactController.js
 export const getProfilesFromContacts = async (req, res) => {
   try {
+    console.log(`Received request with body: ${JSON.stringify(req.body)}`);
     const { contacts } = req.body;
     const userId = req.user._id;
+    console.log(`Authenticated user ID: ${userId}`);
 
     // Validate contacts array
     if (!Array.isArray(contacts) || contacts.length === 0) {
+      console.log("Validation failed: Contacts array is invalid or empty");
       return res.status(400).json({ error: "Contacts array is required" });
     }
+    console.log(`Contacts array validated, length: ${contacts.length}`);
 
-    // Fetch user's contacts to get custom names
-    const userContacts = await Contact.find({
-      userId,
-      phone: { $in: contacts },
-    }).select("phone customName");
+    // Determine if contacts is an array of strings or objects
+    let phoneNumbers = [];
+    let contactMap = new Map();
 
-    // Create a map of phone numbers to custom names
-    const contactMap = new Map(
-      userContacts.map((contact) => [contact.phone, contact.customName])
-    );
+    if (typeof contacts[0] === "string") {
+      console.log("Processing contacts as array of strings");
+      phoneNumbers = contacts;
+      // Fetch custom names from Contact model
+      console.log(`Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
+      const userContacts = await Contact.find({
+        userId,
+        phone: { $in: contacts },
+      }).select("phone customName");
+      console.log(`Found ${userContacts.length} contacts in Contact model`);
+      userContacts.forEach((contact) => {
+        console.log(`Mapping contact: ${contact.phone} -> ${contact.customName || null}`);
+        contactMap.set(contact.phone, contact.customName || null);
+      });
+    } else {
+      console.log("Processing contacts as array of objects");
+      for (const contact of contacts) {
+        if (!contact.phone || typeof contact.phone !== "string") {
+          console.log(`Validation failed for contact: ${JSON.stringify(contact)}`);
+          return res.status(400).json({ error: "Each contact must have a valid phone number" });
+        }
+        phoneNumbers.push(contact.phone);
+        contactMap.set(contact.phone, contact.customName || null);
+        console.log(`Mapping contact: ${contact.phone} -> ${contact.customName || null}`);
+      }
+    }
+    console.log(`Phone numbers extracted: ${phoneNumbers}`);
 
     // Fetch profiles
+    console.log(`Querying Profile model for phones: ${phoneNumbers}`);
     const matchedProfiles = await Profile.find({
-      phone: { $in: contacts },
+      phone: { $in: phoneNumbers },
     }).select("displayName randomNumber isVisible isNumberVisible avatarUrl createdAt phone");
+    console.log(`Found ${matchedProfiles.length} profiles`);
 
-    // Fetch user status for matched profiles
-    const phoneNumbers = matchedProfiles.map((p) => p.phone);
+    // Fetch user status
+    console.log(`Querying User model for phones: ${phoneNumbers}`);
     const users = await User.find({
       phone: { $in: phoneNumbers },
     }).select("phone online lastSeen");
+    console.log(`Found ${users.length} users`);
     const userMap = new Map(users.map((u) => [u.phone, u]));
+    console.log(`User map created with ${users.length} entries`);
 
-    // Return formatted response
-    return res.json({
+    // Prepare response
+    const response = {
       success: true,
       profiles: matchedProfiles.map((profile) => ({
         ...formatProfile(profile, userMap.get(profile.phone)),
         customName: contactMap.get(profile.phone) || null,
       })),
-    });
+    };
+    console.log(`Response prepared: ${JSON.stringify(response)}`);
+
+    // Return formatted response
+    return res.json(response);
   } catch (err) {
-    console.error("getProfilesFromContacts error:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error(`getProfilesFromContacts error: ${err.message}`, err);
+    return res.status(500).json({ error: `Server error: ${err.message}` });
   }
 };
 
