@@ -544,19 +544,25 @@ export const authenticateToken = (req, res, next) => {
 /**
  * Helper: Format profile for response
  */
-const formatProfile = (profile, user) => ({
-  id: profile?._id || null,               // Profile ID
-  userId: user?._id || null,              // 👈 CRITICAL: User ID for sockets
-  phone: profile?.phone || null,
-  displayName: profile?.displayName || "Unknown",
-  randomNumber: profile?.randomNumber || "",
-  isVisible: profile?.isVisible ?? false,
-  isNumberVisible: profile?.isNumberVisible ?? false,
-  avatarUrl: profile?.avatarUrl || "",
-  createdAt: profile?.createdAt || null,
-  online: user?.online ?? false,
-  lastSeen: user?.lastSeen || null,
-});
+const formatProfile = (profile, user, customName = null) => {
+  console.log(`Formatting profile for phone: ${profile?.phone || "unknown"} with customName: ${customName}`);
+  const formatted = {
+    id: profile?._id || null,
+    userId: user?._id || null,
+    phone: profile?.phone || null,
+    displayName: customName || profile?.displayName || "Unknown",
+    randomNumber: profile?.randomNumber || "",
+    isVisible: profile?.isVisible ?? false,
+    isNumberVisible: profile?.isNumberVisible ?? false,
+    avatarUrl: profile?.avatarUrl || "",
+    createdAt: profile?.createdAt || null,
+    online: user?.online ?? false,
+    lastSeen: user?.lastSeen || null,
+    customName,
+  };
+  console.log(`Formatted profile: ${JSON.stringify(formatted)}`);
+  return formatted;
+};
 
 /**
  * Generate 11-digit random number
@@ -758,18 +764,22 @@ export const getProfilesFromContacts = async (req, res) => {
 /**
  * Format chat for response
  */
-const formatChat = (chat) => ({
-  id: chat?._id || null,
-  senderId: chat?.senderId?._id || null,
-  receiverId: chat?.receiverId?._id || null,
-  type: chat?.type || "text",
-  content: chat?.content?.substring(0, 50) + (chat?.content?.length > 50 ? "..." : "") || "",
-  duration: chat?.duration || null,
-  status: chat?.status || "sent",
-  createdAt: chat?.createdAt || null,
-  pinned: chat?.pinned || false,
-});
-
+const formatChat = (chat) => {
+  console.log(`Formatting chat: ${chat?._id || "unknown"}`);
+  const formatted = {
+    id: chat?._id || null,
+    senderId: chat?.senderId?._id || null,
+    receiverId: chat?.receiverId?._id || null,
+    type: chat?.type || "text",
+    content: chat?.content?.substring(0, 50) + (chat?.content?.length > 50 ? "..." : "") || "",
+    duration: chat?.duration || null,
+    status: chat?.status || "sent",
+    createdAt: chat?.createdAt || null,
+    pinned: chat?.pinned || false,
+  };
+  console.log(`Formatted chat: ${JSON.stringify(formatted)}`);
+  return formatted;
+};
 /**
  * Get profile + chat history with target user
  */
@@ -816,11 +826,13 @@ export const getProfileWithChat = async (req, res) => {
 
 export const getChatList = async (req, res) => {
   try {
+    console.log(`getChatList request: myPhone=${req.user.phone}, page=${req.query.page}, limit=${req.query.limit}`);
     const myPhone = req.user.phone;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
     if (page < 1 || limit < 1 || limit > 100) {
+      console.log("Invalid pagination parameters");
       return res.status(400).json({
         success: false,
         error: "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
@@ -830,8 +842,10 @@ export const getChatList = async (req, res) => {
 
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
+      console.log("My profile not found");
       return res.status(404).json({ success: false, error: "Your profile not found" });
     }
+    console.log(`My profile found: ${myProfile._id}`);
 
     const chats = await Chat.find({
       $and: [
@@ -842,8 +856,10 @@ export const getChatList = async (req, res) => {
     })
       .sort({ pinned: -1, createdAt: -1 })
       .populate("senderId receiverId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt");
+    console.log(`Found ${chats.length} chats`);
 
     if (!chats || chats.length === 0) {
+      console.log("No chats found");
       return res.json({
         success: true,
         page,
@@ -859,8 +875,20 @@ export const getChatList = async (req, res) => {
         ...chats.map((chat) => chat.receiverId?.phone).filter(Boolean),
       ]),
     ];
+    console.log(`Phone numbers for users: ${phoneNumbers}`);
+
     const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
+    console.log(`Found ${users.length} users`);
     const userMap = new Map(users.map((u) => [u.phone, u]));
+
+    // Fetch custom names from Contact model
+    console.log(`Querying Contact model for userId: ${req.user._id}, phones: ${phoneNumbers}`);
+    const contacts = await Contact.find({
+      userId: req.user._id,
+      phone: { $in: phoneNumbers },
+    }).select("phone customName");
+    console.log(`Found ${contacts.length} contacts for custom names`);
+    const contactMap = new Map(contacts.map((c) => [c.phone, c.customName || null]));
 
     const chatMap = new Map();
     for (const chat of chats) {
@@ -911,21 +939,25 @@ export const getChatList = async (req, res) => {
       .slice(skip, skip + limit);
 
     const formattedChatList = chatList.map((item) => ({
-      profile: formatProfile(item.profile, userMap.get(item.profile?.phone)),
+      profile: formatProfile(item.profile, userMap.get(item.profile?.phone), contactMap.get(item.profile?.phone)),
       latestMessage: formatChat(item.latestMessage),
       unreadCount: item.unreadCount,
       pinned: item.pinned,
     }));
+    console.log(`Formatted chat list: ${JSON.stringify(formattedChatList)}`);
 
-    return res.json({
+    const response = {
       success: true,
       page,
       limit,
       total: chatMap.size,
       chats: formattedChatList,
-    });
+    };
+    console.log(`Response prepared: ${JSON.stringify(response)}`);
+
+    return res.json(response);
   } catch (err) {
-    console.error("getChatList error:", err);
+    console.error("getChatList error:", err.message, err);
     return res.status(500).json({
       success: false,
       error: "Server error",
