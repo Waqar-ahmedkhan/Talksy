@@ -838,9 +838,9 @@ const normalizePhoneNumber = (phone) => {
 
 export const getChatList = async (req, res) => {
   try {
-    console.log(`getChatList request: myPhone=${req.user.phone}, userId=${req.user._id}, page=${req.query.page}, limit=${req.query.limit}`);
-    const myPhone = normalizePhoneNumber(req.user.phone);
-    const userId = req.user._id;
+    console.log(`getChatList request: req.user=${JSON.stringify(req.user)}, page=${req.query.page}, limit=${req.query.limit}`);
+    const myPhone = normalizePhoneNumber(req.user?.phone);
+    const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
@@ -906,7 +906,6 @@ export const getChatList = async (req, res) => {
     const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
     console.log(`User map created with ${users.length} entries`);
 
-    // Fetch custom names from Contact model
     let contactMap = new Map();
     try {
       console.log(`Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
@@ -1007,7 +1006,6 @@ export const getChatList = async (req, res) => {
     });
   }
 };
-
 
 export const upsertContact = async (req, res) => {
   try {
