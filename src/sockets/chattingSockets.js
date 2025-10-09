@@ -15,9 +15,8 @@ export const initChatSocket = (server) => {
     pingTimeout: 60000,
     pingInterval: 25000,
   });
-  const onlineUsers = new Map(); // userId -> socketId
+  const onlineUsers = new Map(); 
 
-  // Middleware to verify JWT token
   io.use(async (socket, next) => {
     const token = socket.handshake.auth.token;
     const userId = socket.handshake.query.userId;
