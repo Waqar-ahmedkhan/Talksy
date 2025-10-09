@@ -825,83 +825,175 @@ export const getProfileWithChat = async (req, res) => {
   }
 };
 
-export const getProfilesFromContacts = async (req, res) => {
+export const getChatList = async (req, res) => {
   try {
-    console.log(`Received request with body: ${JSON.stringify(req.body)}`);
-    const { contacts } = req.body;
+    console.log(`getChatList request: myPhone=${req.user.phone}, userId=${req.user._id}, page=${req.query.page}, limit=${req.query.limit}`);
+    const myPhone = normalizePhoneNumber(req.user.phone);
     const userId = req.user._id;
-    console.log(`Authenticated user ID: ${userId}`);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
 
-    // Validate contacts array
-    if (!Array.isArray(contacts) || contacts.length === 0) {
-      console.log("Validation failed: Contacts array is invalid or empty");
-      return res.status(400).json({ error: "Contacts array is required" });
-    }
-    console.log(`Contacts array validated, length: ${contacts.length}`);
-
-    // Determine if contacts is an array of strings or objects
-    let phoneNumbers = [];
-    let contactMap = new Map();
-
-    if (typeof contacts[0] === "string") {
-      console.log("Processing contacts as array of strings");
-      phoneNumbers = contacts;
-      // Fetch custom names from Contact model
-      console.log(`Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
-      const userContacts = await Contact.find({
-        userId,
-        phone: { $in: contacts },
-      }).select("phone customName");
-      console.log(`Found ${userContacts.length} contacts in Contact model`);
-      userContacts.forEach((contact) => {
-        console.log(`Mapping contact: ${contact.phone} -> ${contact.customName || null}`);
-        contactMap.set(contact.phone, contact.customName || null);
+    if (!userId) {
+      console.log("Missing userId in request");
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized: Missing user ID",
       });
-    } else {
-      console.log("Processing contacts as array of objects");
-      for (const contact of contacts) {
-        if (!contact.phone || typeof contact.phone !== "string") {
-          console.log(`Validation failed for contact: ${JSON.stringify(contact)}`);
-          return res.status(400).json({ error: "Each contact must have a valid phone number" });
-        }
-        phoneNumbers.push(contact.phone);
-        contactMap.set(contact.phone, contact.customName || null);
-        console.log(`Mapping contact: ${contact.phone} -> ${contact.customName || null}`);
-      }
     }
+
+    if (page < 1 || limit < 1 || limit > 100) {
+      console.log("Invalid pagination parameters");
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+      });
+    }
+    const skip = (page - 1) * limit;
+
+    console.log(`Fetching profile for phone: ${myPhone}`);
+    const myProfile = await Profile.findOne({ phone: myPhone });
+    if (!myProfile) {
+      console.log("My profile not found");
+      return res.status(404).json({ success: false, error: "Your profile not found" });
+    }
+    console.log(`My profile found: ${myProfile._id}`);
+
+    console.log(`Fetching chats for profile: ${myProfile._id}`);
+    const chats = await Chat.find({
+      $and: [
+        { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
+        { receiverId: { $ne: null } },
+        { deletedFor: { $ne: myProfile._id } },
+      ],
+    })
+      .sort({ pinned: -1, createdAt: -1 })
+      .populate("senderId receiverId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt");
+    console.log(`Found ${chats.length} chats`);
+
+    if (!chats || chats.length === 0) {
+      console.log("No chats found");
+      return res.json({
+        success: true,
+        page,
+        limit,
+        total: 0,
+        chats: [],
+      });
+    }
+
+    const phoneNumbers = [
+      ...new Set([
+        ...chats.map((chat) => normalizePhoneNumber(chat.senderId?.phone)).filter(Boolean),
+        ...chats.map((chat) => normalizePhoneNumber(chat.receiverId?.phone)).filter(Boolean),
+      ]),
+    ];
     console.log(`Phone numbers extracted: ${phoneNumbers}`);
 
-    // Fetch profiles
-    console.log(`Querying Profile model for phones: ${phoneNumbers}`);
-    const matchedProfiles = await Profile.find({
-      phone: { $in: phoneNumbers },
-    }).select("displayName randomNumber isVisible isNumberVisible avatarUrl createdAt phone");
-    console.log(`Found ${matchedProfiles.length} profiles`);
-
-    // Fetch user status
-    console.log(`Querying User model for phones: ${phoneNumbers}`);
-    const users = await User.find({
-      phone: { $in: phoneNumbers },
-    }).select("phone online lastSeen");
+    console.log(`Fetching users for phones: ${phoneNumbers}`);
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
     console.log(`Found ${users.length} users`);
-    const userMap = new Map(users.map((u) => [u.phone, u]));
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
     console.log(`User map created with ${users.length} entries`);
 
-    // Prepare response
+    // Fetch custom names from Contact model
+    let contactMap = new Map();
+    try {
+      console.log(`Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
+      const contacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+      console.log(`Found ${contacts.length} contacts for custom names`);
+      contacts.forEach((contact) => {
+        const normalizedPhone = normalizePhoneNumber(contact.phone);
+        console.log(`Mapping contact: ${normalizedPhone} -> ${contact.customName || null}`);
+        contactMap.set(normalizedPhone, contact.customName || null);
+      });
+    } catch (contactError) {
+      console.error(`Error querying Contact model: ${contactError.message}`);
+      console.log("Proceeding without custom names due to Contact query error");
+    }
+
+    const chatMap = new Map();
+    for (const chat of chats) {
+      if (!chat.senderId || !chat.receiverId) {
+        console.warn(`Chat ${chat._id} missing senderId or receiverId`);
+        continue;
+      }
+
+      const otherProfileId =
+        chat.senderId._id.toString() === myProfile._id.toString()
+          ? chat.receiverId._id.toString()
+          : chat.senderId._id.toString();
+
+      if (!chatMap.has(otherProfileId)) {
+        const otherProfile =
+          chat.senderId._id.toString() === myProfile._id.toString() ? chat.receiverId : chat.senderId;
+        chatMap.set(otherProfileId, {
+          profile: otherProfile,
+          latestMessage: chat,
+          unreadCount:
+            chat.receiverId._id.toString() === myProfile._id.toString() &&
+            ["sent", "delivered"].includes(chat.status)
+              ? 1
+              : 0,
+          pinned: chat.pinned,
+        });
+      } else {
+        const existing = chatMap.get(otherProfileId);
+        if (new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)) {
+          existing.latestMessage = chat;
+          existing.pinned = chat.pinned;
+        }
+        if (
+          chat.receiverId._id.toString() === myProfile._id.toString() &&
+          ["sent", "delivered"].includes(chat.status)
+        ) {
+          existing.unreadCount += 1;
+        }
+      }
+    }
+
+    const chatList = Array.from(chatMap.values())
+      .sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.latestMessage.createdAt) - new Date(a.latestMessage.createdAt);
+      })
+      .slice(skip, skip + limit);
+
+    const formattedChatList = chatList.map((item) => {
+      const normalizedPhone = normalizePhoneNumber(item.profile?.phone);
+      return {
+        profile: formatProfile(
+          item.profile,
+          userMap.get(normalizedPhone),
+          contactMap.get(normalizedPhone)
+        ),
+        latestMessage: formatChat(item.latestMessage),
+        unreadCount: item.unreadCount,
+        pinned: item.pinned,
+      };
+    });
+    console.log(`Formatted chat list: ${JSON.stringify(formattedChatList)}`);
+
     const response = {
       success: true,
-      profiles: matchedProfiles.map((profile) => ({
-        ...formatProfile(profile, userMap.get(profile.phone)),
-        customName: contactMap.get(profile.phone) || null,
-      })),
+      page,
+      limit,
+      total: chatMap.size,
+      chats: formattedChatList,
     };
     console.log(`Response prepared: ${JSON.stringify(response)}`);
 
-    // Return formatted response
     return res.json(response);
   } catch (err) {
-    console.error(`getProfilesFromContacts error: ${err.message}`, err);
-    return res.status(500).json({ error: `Server error: ${err.message}` });
+    console.error("getChatList error:", err.message, err);
+    return res.status(500).json({
+      success: false,
+      error: "Server error",
+      details: err.message,
+    });
   }
 };
 
