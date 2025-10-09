@@ -519,6 +519,7 @@ import jwt from "jsonwebtoken";
 import Profile from "../models/Profile.js";
 import Chat from "../models/Chat.js";
 import User from "../models/User.js";
+import Contact from "../models/Contact.js"
 
 /**
  * Middleware to verify JWT token
