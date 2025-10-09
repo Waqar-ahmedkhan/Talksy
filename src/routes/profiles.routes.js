@@ -19,7 +19,7 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.post("/profile", createProfile);
+router.post("/profiles", createProfile);
 router.get("/profile/me", getMyProfile);
 router.get("/profiles/public", getPublicProfiles);
 router.post("/profiles/contacts", getProfilesFromContacts);
