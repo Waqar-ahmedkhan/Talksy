@@ -825,6 +825,17 @@ export const getProfileWithChat = async (req, res) => {
   }
 };
 
+const normalizePhoneNumber = (phone) => {
+  if (!phone) return phone;
+  let normalized = phone.trim();
+  if (!normalized.startsWith("+")) {
+    normalized = `+${normalized}`;
+  }
+  normalized = normalized.replace(/[\s-]/g, "");
+  console.log(`Normalized phone: ${phone} -> ${normalized}`);
+  return normalized;
+};
+
 export const getChatList = async (req, res) => {
   try {
     console.log(`getChatList request: myPhone=${req.user.phone}, userId=${req.user._id}, page=${req.query.page}, limit=${req.query.limit}`);
