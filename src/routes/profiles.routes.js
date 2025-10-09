@@ -1,6 +1,6 @@
 // routes/profileRoutes.js
 import { Router } from "express";
-import { authenticateToken } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 import {
   createProfile,
   getMyProfile,
@@ -12,12 +12,12 @@ import {
   deleteContact,
   sendMessage,
   deleteConversation,
-  deleteMyProfile
-} from "../controllers/profileController.js";
+  deleteMyProfile,
+} from "../controllers/profiles.controller.js";
 
 const router = Router();
 
-router.use(authenticateToken);
+router.use(authMiddleware);
 
 router.post("/profile", createProfile);
 router.get("/profile/me", getMyProfile);
