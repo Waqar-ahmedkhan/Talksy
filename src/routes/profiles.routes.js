@@ -1,4 +1,3 @@
-// routes/profileRoutes.js
 import express from "express";
    import {
      authenticateToken,
@@ -9,15 +8,15 @@ import express from "express";
      getProfileWithChat,
      getChatList, // Added
    } from "../controllers/profiles.controller.js";
-   
+
 
  const router = express.Router();
 
    // Protected routes
-   router.post("/", authenticateToken, createProfile);                  // Create or update profile
-   router.get("/me", authenticateToken, getMyProfile);                 // Get current user's profile
-   router.post("/contacts", authenticateToken, getProfilesFromContacts); // Get profiles from contacts
-   router.get("/with-chat/:phone", authenticateToken, getProfileWithChat); // Get profile + chat history
+   router.post("/", authenticateToken, createProfile);                  
+   router.get("/me", authenticateToken, getMyProfile);                 
+   router.post("/contacts", authenticateToken, getProfilesFromContacts); 
+   router.get("/with-chat/:phone", authenticateToken, getProfileWithChat); 
    router.get("/chats", authenticateToken, getChatList);   
 
    // Public routes
