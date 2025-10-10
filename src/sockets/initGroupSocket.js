@@ -759,7 +759,7 @@ export const initGroupSocket = (server) => {
 
 
 
-    socket.on("send_text_message", async (data, callback) => {
+  socket.on("send_text_message", async (data, callback) => {
       console.log(
         `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
           socket.id
@@ -769,9 +769,6 @@ export const initGroupSocket = (server) => {
           2
         )}`
       );
-
-      const session = await mongoose.startSession();
-      session.startTransaction();
 
       try {
         const { groupId, content } = data;
@@ -812,13 +809,13 @@ export const initGroupSocket = (server) => {
         senderId = new mongoose.Types.ObjectId(senderId);
 
         // Step 3: Check if User exists, create if not found
-        let user = await User.findById(senderId).select("displayName phone").session(session);
+        let user = await User.findById(senderId).select("displayName phone");
         if (!user) {
           console.warn(
             `[SEND_TEXT_MESSAGE] User not found for senderId=${senderId}, checking Profile collection`
           );
           // Try to find Profile to populate User data
-          const profile = await Profile.findOne({ _id: senderId }).session(session);
+          const profile = await Profile.findOne({ _id: senderId });
           let phone = `temp_${senderId}`;
           let displayName = "Default User";
 
@@ -827,7 +824,7 @@ export const initGroupSocket = (server) => {
             displayName = profile.displayName;
           } else {
             // Check if phone exists in Profile collection with different _id
-            const profileByPhone = await Profile.findOne({ phone: { $in: await User.distinct("phone") } }).session(session);
+            const profileByPhone = await Profile.findOne({ phone: { $in: await User.distinct("phone") } });
             if (profileByPhone) {
               phone = profileByPhone.phone;
               displayName = profileByPhone.displayName;
@@ -846,7 +843,7 @@ export const initGroupSocket = (server) => {
           });
 
           try {
-            await user.save({ session });
+            await user.save();
             console.log(
               `[SEND_TEXT_MESSAGE] Created new user for senderId=${senderId}, phone=${phone}, displayName=${displayName}`
             );
@@ -855,7 +852,6 @@ export const initGroupSocket = (server) => {
               console.error(
                 `[SEND_TEXT_MESSAGE_ERROR] Failed to create user due to duplicate phone: senderId=${senderId}, phone=${phone}`
               );
-              await session.abortTransaction();
               return callback({
                 success: false,
                 message: "User creation failed: duplicate phone number",
@@ -890,7 +886,7 @@ export const initGroupSocket = (server) => {
         }
 
         // Step 6: Verify group and membership
-        const group = await Group.findById(castGroupId).session(session);
+        const group = await Group.findById(castGroupId);
         if (!group) {
           console.error(
             `[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${castGroupId}`
@@ -922,7 +918,7 @@ export const initGroupSocket = (server) => {
           deletedFor: [],
         });
 
-        await chat.save({ session });
+        await chat.save();
         console.log(
           `[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, rawChat=${JSON.stringify(
             chat.toObject(),
@@ -937,8 +933,7 @@ export const initGroupSocket = (server) => {
           console.error(
             `[SEND_TEXT_MESSAGE_ERROR] Population failed for messageId=${chat._id}, senderId=${senderId}. Deleting invalid message.`
           );
-          await Chat.findByIdAndDelete(chat._id, { session });
-          await session.abortTransaction();
+          await Chat.findByIdAndDelete(chat._id);
           return callback({
             success: false,
             message: "Sender not found in database after save",
@@ -948,17 +943,14 @@ export const initGroupSocket = (server) => {
           `[SEND_TEXT_MESSAGE] Populated successfully: messageId=${chat._id}, sender displayName=${chat.senderId.displayName}`
         );
 
-        // Step 9: Commit transaction
-        await session.commitTransaction();
-
-        // Step 10: Emit message to group room
+        // Step 9: Emit message to group room
         const groupRoom = `group_${castGroupId}`;
         io.to(groupRoom).emit("new_text_message", { message: chat });
         console.log(
           `[SEND_TEXT_MESSAGE] Emitted new_text_message to groupRoom=${groupRoom}`
         );
 
-        // Step 11: Update message status to delivered
+        // Step 10: Update message status to delivered
         setTimeout(async () => {
           const updatedChat = await Chat.findByIdAndUpdate(
             chat._id,
@@ -980,7 +972,7 @@ export const initGroupSocket = (server) => {
           }
         }, 100);
 
-        // Step 12: Send success response
+        // Step 11: Send success response
         callback({ success: true, message: chat });
         console.log(
           `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
@@ -989,14 +981,11 @@ export const initGroupSocket = (server) => {
         console.error(
           `[SEND_TEXT_MESSAGE_ERROR] Failed: socketId=${socket.id}, userId="${socket.userId}", error=${error.message}, stack=${error.stack}`
         );
-        await session.abortTransaction();
         callback({
           success: false,
           message: "Server error saving message",
           error: error.message,
         });
-      } finally {
-        session.endSession();
       }
     });
 // socket.on("send_text_message", async (data, callback) => {
