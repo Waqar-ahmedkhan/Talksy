@@ -757,7 +757,7 @@ export const initGroupSocket = (server) => {
     });
 
 
- socket.on("send_text_message", async (data, callback) => {
+  socket.on("send_text_message", async (data, callback) => {
       console.log(
         `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
           socket.id
@@ -772,7 +772,7 @@ export const initGroupSocket = (server) => {
         const { groupId, content } = data;
         let senderId = socket.userId;
 
-        // Step 1: Validate senderId
+        // Step 1: Validate socket.userId and check onlineUsers
         if (!senderId || typeof senderId !== "string") {
           console.error(
             `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing senderId: "${senderId}" (socketId=${socket.id})`
@@ -783,6 +783,18 @@ export const initGroupSocket = (server) => {
           });
         }
 
+        // Check if user is in onlineUsers (indicating join_groups was called)
+        if (!onlineUsers.has(senderId)) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] User not in onlineUsers: senderId=${senderId}, socketId=${socket.id}`
+          );
+          return callback({
+            success: false,
+            message: "User not connected - please join groups first",
+          });
+        }
+
+        // Step 2: Validate and cast senderId
         if (!isValidObjectId(senderId)) {
           console.error(
             `[SEND_TEXT_MESSAGE_ERROR] senderId is not a valid ObjectId: "${senderId}" (socketId=${socket.id})`
@@ -792,24 +804,24 @@ export const initGroupSocket = (server) => {
             message: "Invalid user ID format",
           });
         }
-
-        // Step 2: Cast senderId to ObjectId and verify user exists
         senderId = new mongoose.Types.ObjectId(senderId);
-        const user = await User.findById(senderId).select("displayName");
-        if (!user) {
+
+        // Step 3: Verify profile exists in database
+        const profile = await Profile.findById(senderId).select("displayName");
+        if (!profile) {
           console.error(
-            `[SEND_TEXT_MESSAGE_ERROR] User not found in database: senderId=${senderId} (socketId=${socket.id})`
+            `[SEND_TEXT_MESSAGE_ERROR] Profile not found in database: senderId=${senderId}, socketId=${socket.id}`
           );
           return callback({
             success: false,
-            message: "User not found",
+            message: "User profile not found",
           });
         }
         console.log(
-          `[SEND_TEXT_MESSAGE] Valid sender: senderId=${senderId}, displayName=${user.displayName}`
+          `[SEND_TEXT_MESSAGE] Valid sender: senderId=${senderId}, displayName=${profile.displayName}`
         );
 
-        // Step 3: Validate groupId
+        // Step 4: Validate groupId
         if (!groupId || !isValidObjectId(groupId)) {
           console.error(
             `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing groupId: "${groupId}"`
@@ -821,7 +833,7 @@ export const initGroupSocket = (server) => {
         }
         const castGroupId = new mongoose.Types.ObjectId(groupId);
 
-        // Step 4: Validate content
+        // Step 5: Validate content
         if (!content || content.trim() === "") {
           console.error(`[SEND_TEXT_MESSAGE_ERROR] Empty content: "${content}"`);
           return callback({
@@ -830,7 +842,7 @@ export const initGroupSocket = (server) => {
           });
         }
 
-        // Step 5: Verify group and membership
+        // Step 6: Verify group and membership
         const group = await Group.findById(castGroupId);
         if (!group) {
           console.error(
@@ -853,7 +865,7 @@ export const initGroupSocket = (server) => {
           });
         }
 
-        // Step 6: Create and save Chat document
+        // Step 7: Create and save Chat document
         const chat = new Chat({
           senderId,
           groupId: castGroupId,
@@ -865,10 +877,14 @@ export const initGroupSocket = (server) => {
 
         await chat.save();
         console.log(
-          `[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
+          `[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, rawChat=${JSON.stringify(
+            chat.toObject(),
+            null,
+            2
+          )}`
         );
 
-        // Step 7: Populate senderId and verify
+        // Step 8: Populate senderId and verify
         await chat.populate("senderId", "displayName");
         if (!chat.senderId || !chat.senderId._id) {
           console.error(
@@ -877,21 +893,21 @@ export const initGroupSocket = (server) => {
           await Chat.findByIdAndDelete(chat._id);
           return callback({
             success: false,
-            message: "Sender user not found in database",
+            message: "Sender profile not found in database after save",
           });
         }
         console.log(
           `[SEND_TEXT_MESSAGE] Populated successfully: messageId=${chat._id}, sender displayName=${chat.senderId.displayName}`
         );
 
-        // Step 8: Emit message to group room
+        // Step 9: Emit message to group room
         const groupRoom = `group_${castGroupId}`;
         io.to(groupRoom).emit("new_text_message", { message: chat });
         console.log(
           `[SEND_TEXT_MESSAGE] Emitted new_text_message to groupRoom=${groupRoom}`
         );
 
-        // Step 9: Update message status to delivered
+        // Step 10: Update message status to delivered
         setTimeout(async () => {
           const updatedChat = await Chat.findByIdAndUpdate(
             chat._id,
@@ -913,7 +929,7 @@ export const initGroupSocket = (server) => {
           }
         }, 100);
 
-        // Step 10: Send success response
+        // Step 11: Send success response
         callback({ success: true, message: chat });
         console.log(
           `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
