@@ -3,426 +3,696 @@ import Profile from "../models/Profile.js";
 import User from "../models/User.js";
 import Chat from "../models/Chat.js";
 import Contact from "../models/Contact.js";
-import Block from "../models/Block.js";
 import { normalizePhoneNumber } from "../utils/phone.js";
 
-// ========== MIDDLEWARE ==========
+/**
+ * Middleware to verify JWT token and fetch user _id
+ */
 export const authenticateToken = async (req, res, next) => {
   try {
+    console.log("authenticateToken: Starting token verification");
     const authHeader = req.headers["authorization"];
     const token = authHeader?.split(" ")[1];
-    if (!token) return res.status(401).json({ success: false, error: "Access token required" });
+
+    if (!token) {
+      console.error("authenticateToken: No token provided");
+      return res.status(401).json({ success: false, error: "Access token is required" });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded.phone) return res.status(403).json({ success: false, error: "Invalid token" });
+    console.log(`authenticateToken: Token decoded, payload: ${JSON.stringify(decoded)}`);
+
+    if (!decoded.phone) {
+      console.error("authenticateToken: Phone number missing in token payload");
+      return res.status(403).json({ success: false, error: "Invalid token: Phone number missing" });
+    }
 
     const normalizedPhone = normalizePhoneNumber(decoded.phone);
-    const user = await User.findOne({ phone: normalizedPhone }).select("_id phone");
-    if (!user) return res.status(404).json({ success: false, error: "User not found" });
 
-    req.user = { _id: user._id, phone: normalizedPhone };
+    const user = await User.findOne({ phone: normalizedPhone }).select("_id phone");
+    if (!user) {
+      console.error(`authenticateToken: No user found for phone: ${normalizedPhone}`);
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    req.user = {
+      _id: user._id,
+      phone: normalizedPhone,
+      iat: decoded.iat,
+      exp: decoded.exp,
+    };
+    console.log(`authenticateToken: User data attached to req.user: ${JSON.stringify(req.user)}`);
     next();
   } catch (err) {
+    console.error(`authenticateToken: JWT verification failed: ${err.message}`);
     return res.status(403).json({ success: false, error: "Invalid or expired token" });
   }
 };
 
-// ========== HELPER: Get customName ==========
-const getCustomName = async (viewerUserId, targetPhone) => {
-  if (!viewerUserId || !targetPhone) return null;
-  const contact = await Contact.findOne({ 
-    userId: viewerUserId, 
-    phone: targetPhone // Already normalized!
-  }).select("customName").lean();
-  return contact?.customName || null;
-};
-
-// ========== HELPER: Format Profile ==========
-const formatProfile = async (profile, user, viewerUserId) => {
-  if (!profile) return null;
-
-  const customName = viewerUserId ? await getCustomName(viewerUserId, profile.phone) : null;
-  const nameToUse = customName || profile.displayName || "Unknown";
-
-  return {
-    id: profile._id.toString(),
-    userId: user?._id?.toString() || null,
-    phone: profile.phone,
-    displayName: profile.displayName,
-    customName: nameToUse,
-    randomNumber: profile.randomNumber || "",
-    isVisible: profile.isVisible,
-    isNumberVisible: profile.isNumberVisible,
-    avatarUrl: profile.avatarUrl || "",
-    createdAt: profile.createdAt,
-    online: user?.online || false,
+/**
+ * Helper: Format profile for response
+ */
+const formatProfile = (profile, user, customName = null) => {
+  console.log(`formatProfile: Formatting profile for phone: ${profile?.phone || "unknown"}, customName: ${customName}`);
+  const nameToUse = customName || profile?.displayName || "Unknown";
+  const formatted = {
+    id: profile?._id || null,
+    userId: user?._id || null,
+    phone: profile?.phone || null,
+    displayName: profile?.displayName || "Unknown", // Keep original displayName
+    randomNumber: profile?.randomNumber || "",
+    isVisible: profile?.isVisible ?? false,
+    isNumberVisible: profile?.isNumberVisible ?? false,
+    avatarUrl: profile?.avatarUrl || "",
+    createdAt: profile?.createdAt || null,
+    online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
+    customName: nameToUse, // This is what frontend should use for display
   };
+  console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
+  return formatted;
 };
 
-// ========== PROFILE ENDPOINTS ==========
+/**
+ * Generate 11-digit random number
+ */
+const generateRandom11DigitNumber = () => {
+  const randomNumber = Array.from({ length: 11 }, () => Math.floor(Math.random() * 10)).join("");
+  console.log(`generateRandom11DigitNumber: Generated number: ${randomNumber}`);
+  return randomNumber;
+};
+
+/**
+ * Create or Update Profile
+ */
 export const createProfile = async (req, res) => {
   try {
-    const { displayName, isVisible = false, isNumberVisible = false, avatarUrl = "" } = req.body;
-    if (!displayName?.trim()) return res.status(400).json({ success: false, error: "Display name required" });
+    console.log(`createProfile: Request body: ${JSON.stringify(req.body)}`);
+    if (!req.body || typeof req.body !== "object") {
+      console.error("createProfile: Missing or invalid request body");
+      return res.status(400).json({ success: false, error: "Request body is missing or invalid JSON" });
+    }
 
-    const phone = req.user.phone; // Already normalized!
+    const { displayName, isVisible = false, isNumberVisible = false, avatarUrl = "" } = req.body;
+    const phone = normalizePhoneNumber(req.user?.phone);
+
+    if (!phone) {
+      console.error("createProfile: Phone number not found in token");
+      return res.status(401).json({ success: false, error: "Phone number not found in token" });
+    }
+    if (!displayName?.trim()) {
+      console.error("createProfile: Display name is required");
+      return res.status(400).json({ success: false, error: "Display name is required" });
+    }
+
     let profile = await Profile.findOne({ phone });
-    
+    console.log(`createProfile: Profile ${profile ? "found" : "not found"} for phone: ${phone}`);
+
     if (profile) {
       profile.displayName = displayName.trim();
       profile.isVisible = isVisible;
       profile.isNumberVisible = isNumberVisible;
       profile.avatarUrl = avatarUrl.trim();
+      console.log(`createProfile: Updating existing profile for phone: ${phone}`);
     } else {
       profile = new Profile({
         phone,
         displayName: displayName.trim(),
-        randomNumber: Math.random().toString().slice(2, 13).padEnd(11, '0'),
+        randomNumber: generateRandom11DigitNumber(),
         isVisible,
         isNumberVisible,
         avatarUrl: avatarUrl.trim(),
       });
+      console.log(`createProfile: Creating new profile for phone: ${phone}`);
     }
+
     await profile.save();
+    console.log(`createProfile: Profile saved for phone: ${phone}, _id: ${profile._id}`);
 
     let user = await User.findOne({ phone });
     if (!user) {
-      user = new User({ phone, displayName: displayName.trim() });
+      user = new User({
+        phone,
+        displayName: displayName.trim(),
+        online: false,
+        lastSeen: new Date(),
+        musicUrl: null,
+      });
       await user.save();
+      console.log(`createProfile: New user created for phone: ${phone}, _id: ${user._id}`);
+    } else {
+      console.log(`createProfile: Existing user found for phone: ${phone}, _id: ${user._id}`);
     }
 
-    // Ensure contact exists
-    await Contact.findOneAndUpdate(
-      { userId: user._id, phone },
-      { customName: displayName.trim() },
-      { upsert: true, new: true }
-    );
+    // Do not overwrite existing Contact.customName
+    const existingContact = await Contact.findOne({ userId: user._id, phone });
+    if (!existingContact) {
+      const contact = new Contact({
+        userId: user._id,
+        phone,
+        customName: displayName.trim(),
+      });
+      await contact.save();
+      console.log(`createProfile: Created new Contact for phone: ${phone}, customName: ${contact.customName}`);
+    } else {
+      console.log(`createProfile: Existing Contact found for phone: ${phone}, customName: ${existingContact.customName}`);
+    }
 
-    const formatted = await formatProfile(profile, user, req.user._id);
-    return res.status(201).json({ success: true, profile: formatted });
+    const contact = await Contact.findOne({ userId: user._id, phone }).select("customName");
+    const customName = contact?.customName || displayName.trim() || "Unknown";
+    console.log(`createProfile: Custom name for phone ${phone}: ${customName}`);
+
+    return res.status(201).json({
+      success: true,
+      message: "Profile saved successfully",
+      profile: formatProfile(profile, user, customName),
+    });
   } catch (err) {
-    console.error("createProfile error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
+    console.error(`createProfile: Error: ${err.message}`);
+    return res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 };
 
+/**
+ * Get My Profile
+ */
 export const getMyProfile = async (req, res) => {
   try {
-    const profile = await Profile.findOne({ phone: req.user.phone });
-    if (!profile) return res.status(404).json({ success: false, error: "Profile not found" });
+    const phone = normalizePhoneNumber(req.user.phone);
+    console.log(`getMyProfile: Fetching profile for phone: ${phone}, userId: ${req.user._id}`);
+    const profile = await Profile.findOne({ phone });
+    if (!profile) {
+      console.error(`getMyProfile: Profile not found for phone: ${phone}`);
+      return res.status(404).json({ success: false, error: "Profile not found" });
+    }
 
-    const user = await User.findOne({ phone: req.user.phone });
-    const formatted = await formatProfile(profile, user, req.user._id);
-    return res.json({ success: true, profile: formatted });
+    const user = await User.findOne({ phone });
+    console.log(`getMyProfile: User ${user ? "found" : "not found"} for phone: ${phone}`);
+
+    const contact = await Contact.findOne({ userId: req.user._id, phone }).select("customName");
+    const customName = contact?.customName || profile.displayName || "Unknown";
+    console.log(`getMyProfile: Custom name for phone ${phone}: ${customName}`);
+
+    return res.json({
+      success: true,
+      profile: formatProfile(profile, user, customName),
+    });
   } catch (err) {
-    console.error("getMyProfile error:", err.message);
+    console.error(`getMyProfile: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
+/**
+ * Get Public Profiles (paginated)
+ */
 export const getPublicProfiles = async (req, res) => {
   try {
+    console.log(`getPublicProfiles: Request query: ${JSON.stringify(req.query)}, userId: ${req.user?._id || "unauthenticated"}`);
     const page = parseInt(req.query.page) || 1;
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const profiles = await Profile.find({ isVisible: true })
-      .select("phone displayName randomNumber isVisible isNumberVisible avatarUrl createdAt")
+    const publicProfiles = await Profile.find({ isVisible: true })
+      .select("displayName randomNumber isVisible isNumberVisible avatarUrl createdAt phone")
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
+    console.log(`getPublicProfiles: Found ${publicProfiles.length} public profiles`);
 
-    const phones = profiles.map(p => p.phone);
-    const users = await User.find({ phone: { $in: phones } });
-    const userMap = new Map(users.map(u => [u.phone, u]));
+    const phoneNumbers = publicProfiles.map((p) => normalizePhoneNumber(p.phone));
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen musicUrl");
+    console.log(`getPublicProfiles: Found ${users.length} users for phone numbers`);
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
-    const formattedProfiles = [];
-    for (const profile of profiles) {
-      const user = userMap.get(profile.phone);
-      const formatted = await formatProfile(profile, user, req.user?._id);
-      formattedProfiles.push(formatted);
-    }
+    const contacts = req.user?._id
+      ? await Contact.find({ userId: req.user._id, phone: { $in: phoneNumbers } }).select("phone customName")
+      : [];
+    console.log(`getPublicProfiles: Found ${contacts.length} contacts for custom names`);
+    const contactMap = new Map(contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null]));
 
-    return res.json({ success: true, page, limit, profiles: formattedProfiles });
+    const profilesWithFallback = publicProfiles.map((profile) => {
+      const normPhone = normalizePhoneNumber(profile.phone);
+      const customName = contactMap.get(normPhone) || profile.displayName || "Unknown";
+      return formatProfile(profile, userMap.get(normPhone), customName);
+    });
+
+    const response = {
+      success: true,
+      page,
+      limit,
+      profiles: profilesWithFallback,
+    };
+    console.log(`getPublicProfiles: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
-    console.error("getPublicProfiles error:", err.message);
+    console.error(`getPublicProfiles: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
+/**
+ * Get Profiles from Contacts — FIXED TO RESPECT REQUEST customName
+ */
 export const getProfilesFromContacts = async (req, res) => {
   try {
+    console.log(`getProfilesFromContacts: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
     const { contacts } = req.body;
+    const userId = req.user._id;
+
     if (!Array.isArray(contacts) || contacts.length === 0) {
-      return res.status(400).json({ success: false, error: "Contacts array required" });
+      console.error("getProfilesFromContacts: Contacts array is invalid or empty");
+      return res.status(400).json({ success: false, error: "Contacts array is required" });
+    }
+    console.log(`getProfilesFromContacts: Contacts array validated, length: ${contacts.length}`);
+
+    let phoneNumbers = [];
+    let contactMap = new Map();
+
+    if (typeof contacts[0] === "string") {
+      console.log("getProfilesFromContacts: Processing contacts as array of strings");
+      phoneNumbers = contacts.map(normalizePhoneNumber);
+      const userContacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+      userContacts.forEach((contact) => {
+        const normPhone = normalizePhoneNumber(contact.phone);
+        contactMap.set(normPhone, contact.customName || null);
+      });
+    } else {
+      console.log("getProfilesFromContacts: Processing contacts as array of objects");
+      // Step 1: Extract phones and request-provided customNames
+      for (const contact of contacts) {
+        if (!contact.phone || typeof contact.phone !== "string") {
+          console.error(`getProfilesFromContacts: Invalid contact: ${JSON.stringify(contact)}`);
+          return res.status(400).json({ success: false, error: "Each contact must have a valid phone number" });
+        }
+        const normPhone = normalizePhoneNumber(contact.phone);
+        phoneNumbers.push(normPhone);
+        // Preserve customName exactly as sent (including empty string)
+        contactMap.set(normPhone, contact.customName); // may be string, null, or undefined
+      }
+
+      // Step 2: Fetch saved contacts from DB
+      const userContacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+
+      // Step 3: ONLY fill in missing customNames from DB
+      userContacts.forEach((contact) => {
+        const normPhone = normalizePhoneNumber(contact.phone);
+        const requestValue = contactMap.get(normPhone);
+        // If request didn't provide a customName (undefined or null), use DB value
+        if (requestValue === undefined || requestValue === null) {
+          contactMap.set(normPhone, contact.customName || null);
+        }
+        // Otherwise, keep the request-provided value
+      });
     }
 
-    const phones = contacts.map(c => 
-      typeof c === 'string' 
-        ? normalizePhoneNumber(c) 
-        : normalizePhoneNumber(c.phone)
-    ).filter(Boolean);
+    console.log(`getProfilesFromContacts: Querying Profile model for phones: ${phoneNumbers}`);
+    const matchedProfiles = await Profile.find({
+      phone: { $in: phoneNumbers },
+    }).select("displayName randomNumber isVisible isNumberVisible avatarUrl createdAt phone");
+    console.log(`getProfilesFromContacts: Found ${matchedProfiles.length} profiles`);
 
-    const profiles = await Profile.find({ phone: { $in: phones } });
-    const users = await User.find({ phone: { $in: phones } });
-    const userMap = new Map(users.map(u => [u.phone, u]));
+    console.log(`getProfilesFromContacts: Querying User model for phones: ${phoneNumbers}`);
+    const users = await User.find({
+      phone: { $in: phoneNumbers },
+    }).select("phone online lastSeen musicUrl");
+    console.log(`getProfilesFromContacts: Found ${users.length} users`);
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
-    const formattedProfiles = [];
-    for (const profile of profiles) {
-      const user = userMap.get(profile.phone);
-      const formatted = await formatProfile(profile, user, req.user._id);
-      formattedProfiles.push(formatted);
-    }
+    const profilesWithFallback = matchedProfiles.map((profile) => {
+      const normPhone = normalizePhoneNumber(profile.phone);
+      const customNameFromMap = contactMap.get(normPhone);
+      // If customName is explicitly null/undefined, fallback to displayName
+      const finalCustomName = (customNameFromMap !== null && customNameFromMap !== undefined)
+        ? customNameFromMap
+        : profile.displayName || "Unknown";
+      return formatProfile(profile, userMap.get(normPhone), finalCustomName);
+    });
 
-    return res.json({ success: true, profiles: formattedProfiles });
+    const response = {
+      success: true,
+      profiles: profilesWithFallback,
+    };
+    console.log(`getProfilesFromContacts: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
-    console.error("getProfilesFromContacts error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
+    console.error(`getProfilesFromContacts: Error: ${err.message}`);
+    return res.status(500).json({ success: false, error: `Server error: ${err.message}` });
   }
 };
 
-// ========== CHAT ENDPOINTS ==========
-const formatChat = (chat) => ({
-  id: chat._id.toString(),
-  senderId: chat.senderId?._id?.toString(),
-  receiverId: chat.receiverId?._id?.toString(),
-  content: chat.content?.substring(0, 50) + (chat.content?.length > 50 ? "..." : "") || "",
-  status: chat.status || "sent",
-  createdAt: chat.createdAt,
-});
+/**
+ * Format chat for response
+ */
+const formatChat = (chat) => {
+  console.log(`formatChat: Formatting chat: ${chat?._id || "unknown"}`);
+  const formatted = {
+    id: chat?._id || null,
+    senderId: chat?.senderId?._id || null,
+    receiverId: chat?.receiverId?._id || null,
+    channelId: chat?.channelId || null,
+    groupId: chat?.groupId || null,
+    type: chat?.type || "text",
+    content: chat?.content?.substring(0, 50) + (chat?.content?.length > 50 ? "..." : "") || "",
+    fileType: chat?.fileType || null,
+    fileName: chat?.fileName || null,
+    duration: chat?.duration || null,
+    status: chat?.status || "sent",
+    pinned: chat?.pinned || false,
+    createdAt: chat?.createdAt || null,
+  };
+  console.log(`formatChat: Formatted chat: ${JSON.stringify(formatted)}`);
+  return formatted;
+};
 
+/**
+ * Get profile + chat history with target user
+ */
 export const getProfileWithChat = async (req, res) => {
   try {
+    console.log(`getProfileWithChat: Request params: ${JSON.stringify(req.params)}, userId: ${req.user._id}`);
+    const myPhone = normalizePhoneNumber(req.user.phone);
     const targetPhone = normalizePhoneNumber(req.params.phone);
-    if (!targetPhone) return res.status(400).json({ success: false, error: "Valid phone required" });
 
-    const myProfile = await Profile.findOne({ phone: req.user.phone });
+    if (!targetPhone) {
+      console.error("getProfileWithChat: Target phone number is required");
+      return res.status(400).json({ success: false, error: "Target phone number is required" });
+    }
+
+    const myProfile = await Profile.findOne({ phone: myPhone });
+    if (!myProfile) {
+      console.error(`getProfileWithChat: Profile not found for phone: ${myPhone}`);
+      return res.status(404).json({ success: false, error: "Your profile not found" });
+    }
+
     const targetProfile = await Profile.findOne({ phone: targetPhone });
-    if (!targetProfile) return res.status(404).json({ success: false, error: "Profile not found" });
+    if (!targetProfile) {
+      console.error(`getProfileWithChat: Profile not found for phone: ${targetPhone}`);
+      return res.status(404).json({ success: false, error: "Target profile not found" });
+    }
 
     const targetUser = await User.findOne({ phone: targetPhone });
+    console.log(`getProfileWithChat: Target user ${targetUser ? "found" : "not found"} for phone: ${targetPhone}`);
+
+    const contact = await Contact.findOne({ userId: req.user._id, phone: targetPhone }).select("customName");
+    const customName = contact?.customName || targetProfile.displayName || "Unknown";
+    console.log(`getProfileWithChat: Custom name for phone ${targetPhone}: ${customName}`);
+
     const chats = await Chat.find({
       $or: [
         { senderId: myProfile._id, receiverId: targetProfile._id },
         { senderId: targetProfile._id, receiverId: myProfile._id },
       ],
-    }).sort({ createdAt: -1 }).limit(50);
+    })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    console.log(`getProfileWithChat: Found ${chats.length} chats`);
 
-    const formattedProfile = await formatProfile(targetProfile, targetUser, req.user._id);
-    return res.json({
+    const response = {
       success: true,
-      profile: formattedProfile,
+      profile: formatProfile(targetProfile, targetUser, customName),
       chatHistory: chats.map(formatChat),
-    });
+    };
+    console.log(`getProfileWithChat: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
-    console.error("getProfileWithChat error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
+    console.error(`getProfileWithChat: Error: ${err.message}`);
+    return res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 };
 
+/**
+ * Get Chat List
+ */
 export const getChatList = async (req, res) => {
   try {
-    const myProfile = await Profile.findOne({ phone: req.user.phone });
-    if (!myProfile) return res.status(404).json({ success: false, error: "Profile not found" });
+    console.log(`getChatList: Request query: ${JSON.stringify(req.query)}, user: ${JSON.stringify(req.user)}`);
+    const myPhone = normalizePhoneNumber(req.user?.phone);
+    const userId = req.user?._id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
 
-    const chats = await Chat.find({
-      $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }],
-      receiverId: { $ne: null },
-      deletedFor: { $ne: myProfile._id },
-    })
-      .sort({ pinned: -1, createdAt: -1 })
-      .populate("senderId receiverId", "phone displayName");
-
-    if (!chats.length) {
-      return res.json({ success: true, chats: [], total: 0 });
+    if (!userId) {
+      console.error("getChatList: Missing userId in request");
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized: Missing user ID",
+      });
     }
 
-    // Get unique target phones
-    const targetPhones = [...new Set(
-      chats.map(c => 
-        c.senderId.phone === req.user.phone 
-          ? c.receiverId?.phone 
-          : c.senderId?.phone
-      ).filter(Boolean)
-    )];
+    if (page < 1 || limit < 1 || limit > 100) {
+      console.error("getChatList: Invalid pagination parameters");
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+      });
+    }
+    const skip = (page - 1) * limit;
 
-    // Fetch profiles and users
-    const profiles = await Profile.find({ phone: { $in: targetPhones } });
-    const users = await User.find({ phone: { $in: targetPhones } });
-    const profileMap = new Map(profiles.map(p => [p.phone, p]));
-    const userMap = new Map(users.map(u => [u.phone, u]));
+    console.log(`getChatList: Fetching profile for phone: ${myPhone}`);
+    const myProfile = await Profile.findOne({ phone: myPhone });
+    if (!myProfile) {
+      console.error(`getChatList: Profile not found for phone: ${myPhone}`);
+      return res.status(404).json({ success: false, error: "Your profile not found" });
+    }
+    console.log(`getChatList: My profile found: ${myProfile._id}`);
 
-    // Build chat map (group by target)
+    console.log(`getChatList: Fetching chats for profile: ${myProfile._id}`);
+    const chats = await Chat.find({
+      $and: [
+        { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
+        { receiverId: { $ne: null } },
+        { deletedFor: { $ne: myProfile._id } },
+      ],
+    })
+      .sort({ pinned: -1, createdAt: -1 })
+      .populate("senderId receiverId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt");
+    console.log(`getChatList: Found ${chats.length} chats`);
+
+    if (!chats || chats.length === 0) {
+      console.log("getChatList: No chats found");
+      return res.json({
+        success: true,
+        page,
+        limit,
+        total: 0,
+        chats: [],
+      });
+    }
+
+    const phoneNumbers = [
+      ...new Set([
+        ...chats.map((chat) => normalizePhoneNumber(chat.senderId?.phone)).filter(Boolean),
+        ...chats.map((chat) => normalizePhoneNumber(chat.receiverId?.phone)).filter(Boolean),
+      ]),
+    ];
+    console.log(`getChatList: Phone numbers extracted: ${phoneNumbers}`);
+
+    console.log(`getChatList: Fetching users for phones: ${phoneNumbers}`);
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen musicUrl");
+    console.log(`getChatList: Found ${users.length} users`);
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
+
+    let contactMap = new Map();
+    try {
+      console.log(`getChatList: Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
+      const contacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+      console.log(`getChatList: Found ${contacts.length} contacts for custom names`);
+      contacts.forEach((contact) => {
+        const normalizedPhone = normalizePhoneNumber(contact.phone);
+        contactMap.set(normalizedPhone, contact.customName || null);
+      });
+    } catch (contactError) {
+      console.error(`getChatList: Error querying Contact model: ${contactError.message}`);
+      const profiles = await Profile.find({ phone: { $in: phoneNumbers } }).select("phone displayName");
+      profiles.forEach((profile) => {
+        const normalizedPhone = normalizePhoneNumber(profile.phone);
+        if (!contactMap.has(normalizedPhone)) {
+          contactMap.set(normalizedPhone, profile.displayName || "Unknown");
+        }
+      });
+      console.log(`getChatList: Fallback to ${profiles.length} profile display names`);
+    }
+
     const chatMap = new Map();
     for (const chat of chats) {
-      const isOutgoing = chat.senderId.phone === req.user.phone;
-      const targetPhone = isOutgoing ? chat.receiverId?.phone : chat.senderId?.phone;
-      if (!targetPhone) continue;
+      if (!chat.senderId || !chat.receiverId) {
+        console.warn(`getChatList: Chat ${chat._id} missing senderId or receiverId`);
+        continue;
+      }
 
-      if (!chatMap.has(targetPhone)) {
-        chatMap.set(targetPhone, {
-          profile: profileMap.get(targetPhone),
-          user: userMap.get(targetPhone),
+      const otherProfileId =
+        chat.senderId._id.toString() === myProfile._id.toString()
+          ? chat.receiverId._id.toString()
+          : chat.senderId._id.toString();
+
+      if (!chatMap.has(otherProfileId)) {
+        const otherProfile =
+          chat.senderId._id.toString() === myProfile._id.toString() ? chat.receiverId : chat.senderId;
+        chatMap.set(otherProfileId, {
+          profile: otherProfile,
           latestMessage: chat,
-          unreadCount: isOutgoing ? 0 : (["sent", "delivered"].includes(chat.status) ? 1 : 0),
+          unreadCount:
+            chat.receiverId._id.toString() === myProfile._id.toString() &&
+            ["sent", "delivered"].includes(chat.status)
+              ? 1
+              : 0,
           pinned: chat.pinned,
         });
       } else {
-        const existing = chatMap.get(targetPhone);
-        if (chat.createdAt > existing.latestMessage.createdAt) {
+        const existing = chatMap.get(otherProfileId);
+        if (new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)) {
           existing.latestMessage = chat;
           existing.pinned = chat.pinned;
         }
-        if (!isOutgoing && ["sent", "delivered"].includes(chat.status)) {
+        if (
+          chat.receiverId._id.toString() === myProfile._id.toString() &&
+          ["sent", "delivered"].includes(chat.status)
+        ) {
           existing.unreadCount += 1;
         }
       }
     }
 
-    // Format all
-    const formattedChats = [];
-    for (const [phone, data] of chatMap) {
-      const formattedProfile = await formatProfile(data.profile, data.user, req.user._id);
-      formattedChats.push({
-        profile: formattedProfile,
-        latestMessage: formatChat(data.latestMessage),
-        unreadCount: data.unreadCount,
-        pinned: data.pinned,
+    const chatList = Array.from(chatMap.values())
+      .sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.latestMessage.createdAt) - new Date(a.latestMessage.createdAt);
+      })
+      .slice(skip, skip + limit);
+
+    const formattedChatList = chatList.map((item) => {
+      const normalizedPhone = normalizePhoneNumber(item.profile?.phone);
+      const customName = contactMap.get(normalizedPhone) || item.profile.displayName || "Unknown";
+      return {
+        profile: formatProfile(
+          item.profile,
+          userMap.get(normalizedPhone),
+          customName
+        ),
+        latestMessage: formatChat(item.latestMessage),
+        unreadCount: item.unreadCount,
+        pinned: item.pinned,
+      };
+    });
+    console.log(`getChatList: Formatted chat list length: ${formattedChatList.length}`);
+
+    const response = {
+      success: true,
+      page,
+      limit,
+      total: chatMap.size,
+      chats: formattedChatList,
+    };
+    console.log(`getChatList: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
+  } catch (err) {
+    console.error(`getChatList: Error: ${err.message}`);
+    return res.status(500).json({
+      success: false,
+      error: "Server error",
+      details: err.message,
+    });
+  }
+};
+
+/**
+ * Upsert Contact
+ */
+export const upsertContact = async (req, res) => {
+  try {
+    console.log(`upsertContact: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
+    const { phone, customName } = req.body;
+    const userId = req.user._id;
+
+    const normalizedPhone = normalizePhoneNumber(phone);
+    if (!normalizedPhone) {
+      console.error("upsertContact: Valid phone number is required");
+      return res.status(400).json({ success: false, error: "Valid phone number is required" });
+    }
+
+    const contact = await Contact.findOneAndUpdate(
+      { userId, phone: normalizedPhone },
+      { customName: customName?.trim() || "Unknown" },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    console.log(`upsertContact: Contact saved for phone: ${normalizedPhone}, customName: ${contact.customName}`);
+
+    return res.json({
+      success: true,
+      message: "Contact saved",
+      contact: {
+        phone: contact.phone,
+        customName: contact.customName,
+      },
+    });
+  } catch (err) {
+    console.error(`upsertContact: Error: ${err.message}`);
+    return res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+/**
+ * Upsert Multiple Contacts
+ */
+export const upsertMultipleContacts = async (req, res) => {
+  try {
+    console.log(`upsertMultipleContacts: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
+    const { contacts } = req.body;
+    const userId = req.user._id;
+
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      console.error("upsertMultipleContacts: Contacts array is invalid or empty");
+      return res.status(400).json({ success: false, error: "Contacts array is required" });
+    }
+
+    const operations = [];
+    const phoneNumbers = [];
+    for (const contact of contacts) {
+      if (!contact.phone || typeof contact.phone !== "string") {
+        console.error(`upsertMultipleContacts: Invalid contact: ${JSON.stringify(contact)}`);
+        return res.status(400).json({ success: false, error: "Each contact must have a valid phone number" });
+      }
+      const normalizedPhone = normalizePhoneNumber(contact.phone);
+      phoneNumbers.push(normalizedPhone);
+      operations.push({
+        updateOne: {
+          filter: { userId, phone: normalizedPhone },
+          update: { $set: { customName: contact.customName?.trim() || "Unknown" } },
+          upsert: true,
+        },
       });
     }
 
-    // Sort: pinned first, then by latest message
-    formattedChats.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.latestMessage.createdAt) - new Date(a.latestMessage.createdAt);
-    });
+    console.log(`upsertMultipleContacts: Performing bulk write for ${operations.length} contacts`);
+    const result = await Contact.bulkWrite(operations);
+    console.log(`upsertMultipleContacts: Bulk write result: ${JSON.stringify(result)}`);
 
-    return res.json({ success: true, chats: formattedChats, total: formattedChats.length });
-  } catch (err) {
-    console.error("getChatList error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
-  }
-};
+    const updatedContacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    console.log(`upsertMultipleContacts: Retrieved ${updatedContacts.length} updated contacts`);
 
-// ========== CONTACT MANAGEMENT ==========
-export const upsertContact = async (req, res) => {
-  try {
-    const { phone, customName } = req.body;
-    const normalizedPhone = normalizePhoneNumber(phone);
-    if (!normalizedPhone) return res.status(400).json({ success: false, error: "Invalid phone" });
-
-    const contact = await Contact.findOneAndUpdate(
-      { userId: req.user._id, phone: normalizedPhone },
-      { customName: customName?.trim() || "Unknown" },
-      { upsert: true, new: true }
-    );
-
-    return res.json({ 
-      success: true, 
-      contact: { phone: contact.phone, customName: contact.customName } 
-    });
-  } catch (err) {
-    console.error("upsertContact error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
-  }
-};
-
-export const upsertMultipleContacts = async (req, res) => {
-  try {
-    const { contacts } = req.body;
-    if (!Array.isArray(contacts)) return res.status(400).json({ success: false, error: "Contacts must be array" });
-
-    const operations = contacts.map(c => ({
-      updateOne: {
-        filter: { userId: req.user._id, phone: normalizePhoneNumber(c.phone) },
-        update: { $set: { customName: c.customName?.trim() || "Unknown" } },
-        upsert: true,
-      }
-    })).filter(op => op.updateOne.filter.phone);
-
-    if (operations.length > 0) await Contact.bulkWrite(operations);
-
-    const savedContacts = await Contact.find({ 
-      userId: req.user._id, 
-      phone: { $in: operations.map(op => op.updateOne.filter.phone) } 
-    });
-    
-    return res.json({
+    const response = {
       success: true,
-      contacts: savedContacts.map(c => ({ phone: c.phone, customName: c.customName }))
-    });
+      message: "Contacts saved successfully",
+      contacts: updatedContacts.map((contact) => ({
+        phone: contact.phone,
+        customName: contact.customName,
+      })),
+    };
+    console.log(`upsertMultipleContacts: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
-    console.error("upsertMultipleContacts error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
-  }
-};
-
-// ========== BLOCKING ==========
-export const blockUser = async (req, res) => {
-  try {
-    const { phone } = req.body;
-    const targetPhone = normalizePhoneNumber(phone);
-    if (!targetPhone) return res.status(400).json({ success: false, error: "Invalid phone" });
-
-    const targetUser = await User.findOne({ phone: targetPhone });
-    if (!targetUser) return res.status(404).json({ success: false, error: "User not found" });
-    if (targetUser._id.toString() === req.user._id.toString()) {
-      return res.status(400).json({ success: false, error: "Cannot block yourself" });
-    }
-
-    await Block.findOneAndUpdate(
-      { blockerId: req.user._id, blockedId: targetUser._id },
-      {},
-      { upsert: true }
-    );
-
-    return res.json({ success: true, message: "User blocked" });
-  } catch (err) {
-    console.error("blockUser error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
-  }
-};
-
-export const unblockUser = async (req, res) => {
-  try {
-    const { phone } = req.body;
-    const targetPhone = normalizePhoneNumber(phone);
-    if (!targetPhone) return res.status(400).json({ success: false, error: "Invalid phone" });
-
-    const targetUser = await User.findOne({ phone: targetPhone });
-    if (!targetUser) return res.status(404).json({ success: false, error: "User not found" });
-
-    await Block.deleteOne({ blockerId: req.user._id, blockedId: targetUser._id });
-    return res.json({ success: true, message: "User unblocked" });
-  } catch (err) {
-    console.error("unblockUser error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
-  }
-};
-
-export const getBlockedProfiles = async (req, res) => {
-  try {
-    const blocks = await Block.find({ blockerId: req.user._id });
-    const blockedUserIds = blocks.map(b => b.blockedId);
-    if (!blockedUserIds.length) return res.json({ success: true, blockedProfiles: [] });
-
-    const blockedUsers = await User.find({ _id: { $in: blockedUserIds } });
-    const phones = blockedUsers.map(u => u.phone);
-    const profiles = await Profile.find({ phone: { $in: phones } });
-    const userMap = new Map(blockedUsers.map(u => [u.phone, u]));
-
-    const blockedProfiles = [];
-    for (const profile of profiles) {
-      const user = userMap.get(profile.phone);
-      const formatted = await formatProfile(profile, user, req.user._id);
-      blockedProfiles.push(formatted);
-    }
-
-    return res.json({ success: true, blockedProfiles });
-  } catch (err) {
-    console.error("getBlockedProfiles error:", err.message);
-    return res.status(500).json({ success: false, error: "Server error" });
+    console.error(`upsertMultipleContacts: Error: ${err.message}`);
+    return res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 };
