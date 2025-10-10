@@ -12,7 +12,6 @@ import express from "express";
 
  const router = express.Router();
 
-   // Protected routes
    router.post("/", authenticateToken, createProfile);                  
    router.get("/me", authenticateToken, getMyProfile);                 
    router.post("/contacts", authenticateToken, getProfilesFromContacts); 
