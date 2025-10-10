@@ -59,7 +59,7 @@ const formatProfile = (profile, user, customName = null) => {
     id: profile?._id || null,
     userId: user?._id || null,
     phone: profile?.phone || null,
-    displayName: nameToUse, // Use customName from Contact
+    displayName: nameToUse, // Use Contact.customName
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -136,6 +136,7 @@ export const createProfile = async (req, res) => {
         displayName: displayName.trim(),
         online: false,
         lastSeen: new Date(),
+        musicUrl: null,
       });
       await user.save();
       console.log(`createProfile: New user created for phone: ${phone}, _id: ${user._id}`);
@@ -220,7 +221,7 @@ export const getPublicProfiles = async (req, res) => {
     console.log(`getPublicProfiles: Found ${publicProfiles.length} public profiles`);
 
     const phoneNumbers = publicProfiles.map((p) => normalizePhoneNumber(p.phone));
-    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen musicUrl");
     console.log(`getPublicProfiles: Found ${users.length} users for phone numbers`);
     const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
@@ -315,7 +316,7 @@ export const getProfilesFromContacts = async (req, res) => {
     console.log(`getProfilesFromContacts: Querying User model for phones: ${phoneNumbers}`);
     const users = await User.find({
       phone: { $in: phoneNumbers },
-    }).select("phone online lastSeen");
+    }).select("phone online lastSeen musicUrl");
     console.log(`getProfilesFromContacts: Found ${users.length} users`);
     const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
@@ -346,12 +347,16 @@ const formatChat = (chat) => {
     id: chat?._id || null,
     senderId: chat?.senderId?._id || null,
     receiverId: chat?.receiverId?._id || null,
+    channelId: chat?.channelId || null,
+    groupId: chat?.groupId || null,
     type: chat?.type || "text",
     content: chat?.content?.substring(0, 50) + (chat?.content?.length > 50 ? "..." : "") || "",
+    fileType: chat?.fileType || null,
+    fileName: chat?.fileName || null,
     duration: chat?.duration || null,
     status: chat?.status || "sent",
-    createdAt: chat?.createdAt || null,
     pinned: chat?.pinned || false,
+    createdAt: chat?.createdAt || null,
   };
   console.log(`formatChat: Formatted chat: ${JSON.stringify(formatted)}`);
   return formatted;
@@ -481,7 +486,7 @@ export const getChatList = async (req, res) => {
     console.log(`getChatList: Phone numbers extracted: ${phoneNumbers}`);
 
     console.log(`getChatList: Fetching users for phones: ${phoneNumbers}`);
-    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen musicUrl");
     console.log(`getChatList: Found ${users.length} users`);
     const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
@@ -553,7 +558,7 @@ export const getChatList = async (req, res) => {
     const chatList = Array.from(chatMap.values())
       .sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
-        if (!b.pinned && a.pinned) return 1;
+        if (!a.pinned && b.pinned) return 1;
         return new Date(b.latestMessage.createdAt) - new Date(a.latestMessage.createdAt);
       })
       .slice(skip, skip + limit);
@@ -608,12 +613,9 @@ export const upsertContact = async (req, res) => {
       return res.status(400).json({ success: false, error: "Valid phone number is required" });
     }
 
-    const profile = await Profile.findOne({ phone: normalizedPhone }).select("displayName");
-    const fallbackName = profile?.displayName || "Unknown";
-
     const contact = await Contact.findOneAndUpdate(
       { userId, phone: normalizedPhone },
-      { customName: customName?.trim() || fallbackName },
+      { customName: customName?.trim() || "Unknown" },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
     console.log(`upsertContact: Contact saved for phone: ${normalizedPhone}, customName: ${contact.customName}`);
