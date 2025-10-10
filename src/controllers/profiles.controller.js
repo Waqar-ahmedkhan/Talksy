@@ -50,45 +50,36 @@ export const authenticateToken = async (req, res, next) => {
 };
 
 /**
- * Helper: Get custom name for a phone from viewer's contacts
+ * Helper: Format profile for response
  */
-const getCustomNameForPhone = async (viewerUserId, phone) => {
-  if (!viewerUserId || !phone) return null;
-  const contact = await Contact.findOne({ userId: viewerUserId, phone }).select("customName").lean();
-  return contact?.customName || null;
-};
-
-/**
- * Unified profile formatter — resolves customName based on viewer
- */
-const formatProfile = async (profile, user, viewerUserId) => {
-  if (!profile) return null;
-
-  const normPhone = normalizePhoneNumber(profile.phone);
-  const customName = viewerUserId ? await getCustomNameForPhone(viewerUserId, normPhone) : null;
-  const nameToUse = customName || profile.displayName || "Unknown";
-
-  return {
-    id: profile._id || null,
+const formatProfile = (profile, user, customName = null) => {
+  console.log(`formatProfile: Formatting profile for phone: ${profile?.phone || "unknown"}, customName: ${customName}`);
+  const nameToUse = customName || profile?.displayName || "Unknown";
+  const formatted = {
+    id: profile?._id || null,
     userId: user?._id || null,
-    phone: profile.phone || null,
-    displayName: profile.displayName || "Unknown",
-    randomNumber: profile.randomNumber || "",
-    isVisible: profile.isVisible ?? false,
-    isNumberVisible: profile.isNumberVisible ?? false,
-    avatarUrl: profile.avatarUrl || "",
-    createdAt: profile.createdAt || null,
+    phone: profile?.phone || null,
+    displayName: profile?.displayName || "Unknown", // Keep original displayName
+    randomNumber: profile?.randomNumber || "",
+    isVisible: profile?.isVisible ?? false,
+    isNumberVisible: profile?.isNumberVisible ?? false,
+    avatarUrl: profile?.avatarUrl || "",
+    createdAt: profile?.createdAt || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
-    customName: nameToUse,
+    customName: nameToUse, // This is what frontend should use for display
   };
+  console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
+  return formatted;
 };
 
 /**
  * Generate 11-digit random number
  */
 const generateRandom11DigitNumber = () => {
-  return Array.from({ length: 11 }, () => Math.floor(Math.random() * 10)).join("");
+  const randomNumber = Array.from({ length: 11 }, () => Math.floor(Math.random() * 10)).join("");
+  console.log(`generateRandom11DigitNumber: Generated number: ${randomNumber}`);
+  return randomNumber;
 };
 
 /**
@@ -96,7 +87,9 @@ const generateRandom11DigitNumber = () => {
  */
 export const createProfile = async (req, res) => {
   try {
+    console.log(`createProfile: Request body: ${JSON.stringify(req.body)}`);
     if (!req.body || typeof req.body !== "object") {
+      console.error("createProfile: Missing or invalid request body");
       return res.status(400).json({ success: false, error: "Request body is missing or invalid JSON" });
     }
 
@@ -104,18 +97,23 @@ export const createProfile = async (req, res) => {
     const phone = normalizePhoneNumber(req.user?.phone);
 
     if (!phone) {
+      console.error("createProfile: Phone number not found in token");
       return res.status(401).json({ success: false, error: "Phone number not found in token" });
     }
     if (!displayName?.trim()) {
+      console.error("createProfile: Display name is required");
       return res.status(400).json({ success: false, error: "Display name is required" });
     }
 
     let profile = await Profile.findOne({ phone });
+    console.log(`createProfile: Profile ${profile ? "found" : "not found"} for phone: ${phone}`);
+
     if (profile) {
       profile.displayName = displayName.trim();
       profile.isVisible = isVisible;
       profile.isNumberVisible = isNumberVisible;
       profile.avatarUrl = avatarUrl.trim();
+      console.log(`createProfile: Updating existing profile for phone: ${phone}`);
     } else {
       profile = new Profile({
         phone,
@@ -125,9 +123,11 @@ export const createProfile = async (req, res) => {
         isNumberVisible,
         avatarUrl: avatarUrl.trim(),
       });
+      console.log(`createProfile: Creating new profile for phone: ${phone}`);
     }
 
     await profile.save();
+    console.log(`createProfile: Profile saved for phone: ${phone}, _id: ${profile._id}`);
 
     let user = await User.findOne({ phone });
     if (!user) {
@@ -139,23 +139,33 @@ export const createProfile = async (req, res) => {
         musicUrl: null,
       });
       await user.save();
+      console.log(`createProfile: New user created for phone: ${phone}, _id: ${user._id}`);
+    } else {
+      console.log(`createProfile: Existing user found for phone: ${phone}, _id: ${user._id}`);
     }
 
-    // Ensure contact exists
+    // Do not overwrite existing Contact.customName
     const existingContact = await Contact.findOne({ userId: user._id, phone });
     if (!existingContact) {
-      await Contact.create({
+      const contact = new Contact({
         userId: user._id,
         phone,
         customName: displayName.trim(),
       });
+      await contact.save();
+      console.log(`createProfile: Created new Contact for phone: ${phone}, customName: ${contact.customName}`);
+    } else {
+      console.log(`createProfile: Existing Contact found for phone: ${phone}, customName: ${existingContact.customName}`);
     }
 
-    const formattedProfile = await formatProfile(profile, user, req.user._id);
+    const contact = await Contact.findOne({ userId: user._id, phone }).select("customName");
+    const customName = contact?.customName || displayName.trim() || "Unknown";
+    console.log(`createProfile: Custom name for phone ${phone}: ${customName}`);
+
     return res.status(201).json({
       success: true,
       message: "Profile saved successfully",
-      profile: formattedProfile,
+      profile: formatProfile(profile, user, customName),
     });
   } catch (err) {
     console.error(`createProfile: Error: ${err.message}`);
@@ -169,15 +179,24 @@ export const createProfile = async (req, res) => {
 export const getMyProfile = async (req, res) => {
   try {
     const phone = normalizePhoneNumber(req.user.phone);
+    console.log(`getMyProfile: Fetching profile for phone: ${phone}, userId: ${req.user._id}`);
     const profile = await Profile.findOne({ phone });
     if (!profile) {
+      console.error(`getMyProfile: Profile not found for phone: ${phone}`);
       return res.status(404).json({ success: false, error: "Profile not found" });
     }
 
     const user = await User.findOne({ phone });
-    const formattedProfile = await formatProfile(profile, user, req.user._id);
+    console.log(`getMyProfile: User ${user ? "found" : "not found"} for phone: ${phone}`);
 
-    return res.json({ success: true, profile: formattedProfile });
+    const contact = await Contact.findOne({ userId: req.user._id, phone }).select("customName");
+    const customName = contact?.customName || profile.displayName || "Unknown";
+    console.log(`getMyProfile: Custom name for phone ${phone}: ${customName}`);
+
+    return res.json({
+      success: true,
+      profile: formatProfile(profile, user, customName),
+    });
   } catch (err) {
     console.error(`getMyProfile: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error" });
@@ -189,6 +208,7 @@ export const getMyProfile = async (req, res) => {
  */
 export const getPublicProfiles = async (req, res) => {
   try {
+    console.log(`getPublicProfiles: Request query: ${JSON.stringify(req.query)}, userId: ${req.user?._id || "unauthenticated"}`);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -198,24 +218,33 @@ export const getPublicProfiles = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
+    console.log(`getPublicProfiles: Found ${publicProfiles.length} public profiles`);
 
-    const phoneNumbers = publicProfiles.map(p => normalizePhoneNumber(p.phone));
-    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
-    const userMap = new Map(users.map(u => [normalizePhoneNumber(u.phone), u]));
+    const phoneNumbers = publicProfiles.map((p) => normalizePhoneNumber(p.phone));
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen musicUrl");
+    console.log(`getPublicProfiles: Found ${users.length} users for phone numbers`);
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
-    const profiles = [];
-    for (const profile of publicProfiles) {
-      const user = userMap.get(normalizePhoneNumber(profile.phone));
-      const formatted = await formatProfile(profile, user, req.user?._id);
-      profiles.push(formatted);
-    }
+    const contacts = req.user?._id
+      ? await Contact.find({ userId: req.user._id, phone: { $in: phoneNumbers } }).select("phone customName")
+      : [];
+    console.log(`getPublicProfiles: Found ${contacts.length} contacts for custom names`);
+    const contactMap = new Map(contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null]));
 
-    return res.json({
+    const profilesWithFallback = publicProfiles.map((profile) => {
+      const normPhone = normalizePhoneNumber(profile.phone);
+      const customName = contactMap.get(normPhone) || profile.displayName || "Unknown";
+      return formatProfile(profile, userMap.get(normPhone), customName);
+    });
+
+    const response = {
       success: true,
       page,
       limit,
-      profiles,
-    });
+      profiles: profilesWithFallback,
+    };
+    console.log(`getPublicProfiles: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
     console.error(`getPublicProfiles: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error" });
@@ -223,49 +252,95 @@ export const getPublicProfiles = async (req, res) => {
 };
 
 /**
- * Get Profiles from Contacts
+ * Get Profiles from Contacts — FIXED TO RESPECT REQUEST customName
  */
 export const getProfilesFromContacts = async (req, res) => {
   try {
+    console.log(`getProfilesFromContacts: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
     const { contacts } = req.body;
     const userId = req.user._id;
 
     if (!Array.isArray(contacts) || contacts.length === 0) {
+      console.error("getProfilesFromContacts: Contacts array is invalid or empty");
       return res.status(400).json({ success: false, error: "Contacts array is required" });
     }
+    console.log(`getProfilesFromContacts: Contacts array validated, length: ${contacts.length}`);
 
     let phoneNumbers = [];
+    let contactMap = new Map();
+
     if (typeof contacts[0] === "string") {
+      console.log("getProfilesFromContacts: Processing contacts as array of strings");
       phoneNumbers = contacts.map(normalizePhoneNumber);
+      const userContacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+      userContacts.forEach((contact) => {
+        const normPhone = normalizePhoneNumber(contact.phone);
+        contactMap.set(normPhone, contact.customName || null);
+      });
     } else {
+      console.log("getProfilesFromContacts: Processing contacts as array of objects");
+      // Step 1: Extract phones and request-provided customNames
       for (const contact of contacts) {
         if (!contact.phone || typeof contact.phone !== "string") {
+          console.error(`getProfilesFromContacts: Invalid contact: ${JSON.stringify(contact)}`);
           return res.status(400).json({ success: false, error: "Each contact must have a valid phone number" });
         }
-        phoneNumbers.push(normalizePhoneNumber(contact.phone));
+        const normPhone = normalizePhoneNumber(contact.phone);
+        phoneNumbers.push(normPhone);
+        // Preserve customName exactly as sent (including empty string)
+        contactMap.set(normPhone, contact.customName); // may be string, null, or undefined
       }
+
+      // Step 2: Fetch saved contacts from DB
+      const userContacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+
+      // Step 3: ONLY fill in missing customNames from DB
+      userContacts.forEach((contact) => {
+        const normPhone = normalizePhoneNumber(contact.phone);
+        const requestValue = contactMap.get(normPhone);
+        // If request didn't provide a customName (undefined or null), use DB value
+        if (requestValue === undefined || requestValue === null) {
+          contactMap.set(normPhone, contact.customName || null);
+        }
+        // Otherwise, keep the request-provided value
+      });
     }
 
+    console.log(`getProfilesFromContacts: Querying Profile model for phones: ${phoneNumbers}`);
     const matchedProfiles = await Profile.find({
       phone: { $in: phoneNumbers },
     }).select("displayName randomNumber isVisible isNumberVisible avatarUrl createdAt phone");
+    console.log(`getProfilesFromContacts: Found ${matchedProfiles.length} profiles`);
 
+    console.log(`getProfilesFromContacts: Querying User model for phones: ${phoneNumbers}`);
     const users = await User.find({
       phone: { $in: phoneNumbers },
     }).select("phone online lastSeen musicUrl");
-    const userMap = new Map(users.map(u => [normalizePhoneNumber(u.phone), u]));
+    console.log(`getProfilesFromContacts: Found ${users.length} users`);
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
-    const profiles = [];
-    for (const profile of matchedProfiles) {
-      const user = userMap.get(normalizePhoneNumber(profile.phone));
-      const formatted = await formatProfile(profile, user, userId);
-      profiles.push(formatted);
-    }
-
-    return res.json({
-      success: true,
-      profiles,
+    const profilesWithFallback = matchedProfiles.map((profile) => {
+      const normPhone = normalizePhoneNumber(profile.phone);
+      const customNameFromMap = contactMap.get(normPhone);
+      // If customName is explicitly null/undefined, fallback to displayName
+      const finalCustomName = (customNameFromMap !== null && customNameFromMap !== undefined)
+        ? customNameFromMap
+        : profile.displayName || "Unknown";
+      return formatProfile(profile, userMap.get(normPhone), finalCustomName);
     });
+
+    const response = {
+      success: true,
+      profiles: profilesWithFallback,
+    };
+    console.log(`getProfilesFromContacts: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
     console.error(`getProfilesFromContacts: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: `Server error: ${err.message}` });
@@ -276,22 +351,24 @@ export const getProfilesFromContacts = async (req, res) => {
  * Format chat for response
  */
 const formatChat = (chat) => {
-  if (!chat) return null;
-  return {
-    id: chat._id || null,
-    senderId: chat.senderId?._id || null,
-    receiverId: chat.receiverId?._id || null,
-    channelId: chat.channelId || null,
-    groupId: chat.groupId || null,
-    type: chat.type || "text",
-    content: chat.content?.substring(0, 50) + (chat.content?.length > 50 ? "..." : "") || "",
-    fileType: chat.fileType || null,
-    fileName: chat.fileName || null,
-    duration: chat.duration || null,
-    status: chat.status || "sent",
-    pinned: chat.pinned || false,
-    createdAt: chat.createdAt || null,
+  console.log(`formatChat: Formatting chat: ${chat?._id || "unknown"}`);
+  const formatted = {
+    id: chat?._id || null,
+    senderId: chat?.senderId?._id || null,
+    receiverId: chat?.receiverId?._id || null,
+    channelId: chat?.channelId || null,
+    groupId: chat?.groupId || null,
+    type: chat?.type || "text",
+    content: chat?.content?.substring(0, 50) + (chat?.content?.length > 50 ? "..." : "") || "",
+    fileType: chat?.fileType || null,
+    fileName: chat?.fileName || null,
+    duration: chat?.duration || null,
+    status: chat?.status || "sent",
+    pinned: chat?.pinned || false,
+    createdAt: chat?.createdAt || null,
   };
+  console.log(`formatChat: Formatted chat: ${JSON.stringify(formatted)}`);
+  return formatted;
 };
 
 /**
@@ -299,39 +376,51 @@ const formatChat = (chat) => {
  */
 export const getProfileWithChat = async (req, res) => {
   try {
+    console.log(`getProfileWithChat: Request params: ${JSON.stringify(req.params)}, userId: ${req.user._id}`);
     const myPhone = normalizePhoneNumber(req.user.phone);
     const targetPhone = normalizePhoneNumber(req.params.phone);
 
     if (!targetPhone) {
+      console.error("getProfileWithChat: Target phone number is required");
       return res.status(400).json({ success: false, error: "Target phone number is required" });
     }
 
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
+      console.error(`getProfileWithChat: Profile not found for phone: ${myPhone}`);
       return res.status(404).json({ success: false, error: "Your profile not found" });
     }
 
     const targetProfile = await Profile.findOne({ phone: targetPhone });
     if (!targetProfile) {
+      console.error(`getProfileWithChat: Profile not found for phone: ${targetPhone}`);
       return res.status(404).json({ success: false, error: "Target profile not found" });
     }
 
     const targetUser = await User.findOne({ phone: targetPhone });
+    console.log(`getProfileWithChat: Target user ${targetUser ? "found" : "not found"} for phone: ${targetPhone}`);
+
+    const contact = await Contact.findOne({ userId: req.user._id, phone: targetPhone }).select("customName");
+    const customName = contact?.customName || targetProfile.displayName || "Unknown";
+    console.log(`getProfileWithChat: Custom name for phone ${targetPhone}: ${customName}`);
 
     const chats = await Chat.find({
       $or: [
         { senderId: myProfile._id, receiverId: targetProfile._id },
         { senderId: targetProfile._id, receiverId: myProfile._id },
       ],
-    }).sort({ createdAt: -1 }).limit(50);
+    })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    console.log(`getProfileWithChat: Found ${chats.length} chats`);
 
-    const formattedProfile = await formatProfile(targetProfile, targetUser, req.user._id);
-
-    return res.json({
+    const response = {
       success: true,
-      profile: formattedProfile,
+      profile: formatProfile(targetProfile, targetUser, customName),
       chatHistory: chats.map(formatChat),
-    });
+    };
+    console.log(`getProfileWithChat: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
     console.error(`getProfileWithChat: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error", details: err.message });
@@ -343,25 +432,38 @@ export const getProfileWithChat = async (req, res) => {
  */
 export const getChatList = async (req, res) => {
   try {
+    console.log(`getChatList: Request query: ${JSON.stringify(req.query)}, user: ${JSON.stringify(req.user)}`);
     const myPhone = normalizePhoneNumber(req.user?.phone);
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
     if (!userId) {
-      return res.status(401).json({ success: false, error: "Unauthorized: Missing user ID" });
+      console.error("getChatList: Missing userId in request");
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized: Missing user ID",
+      });
     }
 
     if (page < 1 || limit < 1 || limit > 100) {
-      return res.status(400).json({ success: false, error: "Invalid pagination parameters" });
+      console.error("getChatList: Invalid pagination parameters");
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+      });
     }
     const skip = (page - 1) * limit;
 
+    console.log(`getChatList: Fetching profile for phone: ${myPhone}`);
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
+      console.error(`getChatList: Profile not found for phone: ${myPhone}`);
       return res.status(404).json({ success: false, error: "Your profile not found" });
     }
+    console.log(`getChatList: My profile found: ${myProfile._id}`);
 
+    console.log(`getChatList: Fetching chats for profile: ${myProfile._id}`);
     const chats = await Chat.find({
       $and: [
         { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
@@ -371,24 +473,62 @@ export const getChatList = async (req, res) => {
     })
       .sort({ pinned: -1, createdAt: -1 })
       .populate("senderId receiverId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt");
+    console.log(`getChatList: Found ${chats.length} chats`);
 
     if (!chats || chats.length === 0) {
-      return res.json({ success: true, page, limit, total: 0, chats: [] });
+      console.log("getChatList: No chats found");
+      return res.json({
+        success: true,
+        page,
+        limit,
+        total: 0,
+        chats: [],
+      });
     }
 
     const phoneNumbers = [
       ...new Set([
-        ...chats.map(c => normalizePhoneNumber(c.senderId?.phone)).filter(Boolean),
-        ...chats.map(c => normalizePhoneNumber(c.receiverId?.phone)).filter(Boolean),
+        ...chats.map((chat) => normalizePhoneNumber(chat.senderId?.phone)).filter(Boolean),
+        ...chats.map((chat) => normalizePhoneNumber(chat.receiverId?.phone)).filter(Boolean),
       ]),
     ];
+    console.log(`getChatList: Phone numbers extracted: ${phoneNumbers}`);
 
+    console.log(`getChatList: Fetching users for phones: ${phoneNumbers}`);
     const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen musicUrl");
-    const userMap = new Map(users.map(u => [normalizePhoneNumber(u.phone), u]));
+    console.log(`getChatList: Found ${users.length} users`);
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
+
+    let contactMap = new Map();
+    try {
+      console.log(`getChatList: Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
+      const contacts = await Contact.find({
+        userId,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName");
+      console.log(`getChatList: Found ${contacts.length} contacts for custom names`);
+      contacts.forEach((contact) => {
+        const normalizedPhone = normalizePhoneNumber(contact.phone);
+        contactMap.set(normalizedPhone, contact.customName || null);
+      });
+    } catch (contactError) {
+      console.error(`getChatList: Error querying Contact model: ${contactError.message}`);
+      const profiles = await Profile.find({ phone: { $in: phoneNumbers } }).select("phone displayName");
+      profiles.forEach((profile) => {
+        const normalizedPhone = normalizePhoneNumber(profile.phone);
+        if (!contactMap.has(normalizedPhone)) {
+          contactMap.set(normalizedPhone, profile.displayName || "Unknown");
+        }
+      });
+      console.log(`getChatList: Fallback to ${profiles.length} profile display names`);
+    }
 
     const chatMap = new Map();
     for (const chat of chats) {
-      if (!chat.senderId || !chat.receiverId) continue;
+      if (!chat.senderId || !chat.receiverId) {
+        console.warn(`getChatList: Chat ${chat._id} missing senderId or receiverId`);
+        continue;
+      }
 
       const otherProfileId =
         chat.senderId._id.toString() === myProfile._id.toString()
@@ -431,31 +571,38 @@ export const getChatList = async (req, res) => {
       })
       .slice(skip, skip + limit);
 
-    // Format all profiles with customName
-    const formattedChatList = await Promise.all(
-      chatList.map(async (item) => {
-        const normPhone = normalizePhoneNumber(item.profile?.phone);
-        const user = userMap.get(normPhone);
-        const formattedProfile = await formatProfile(item.profile, user, userId);
-        return {
-          profile: formattedProfile,
-          latestMessage: formatChat(item.latestMessage),
-          unreadCount: item.unreadCount,
-          pinned: item.pinned,
-        };
-      })
-    );
+    const formattedChatList = chatList.map((item) => {
+      const normalizedPhone = normalizePhoneNumber(item.profile?.phone);
+      const customName = contactMap.get(normalizedPhone) || item.profile.displayName || "Unknown";
+      return {
+        profile: formatProfile(
+          item.profile,
+          userMap.get(normalizedPhone),
+          customName
+        ),
+        latestMessage: formatChat(item.latestMessage),
+        unreadCount: item.unreadCount,
+        pinned: item.pinned,
+      };
+    });
+    console.log(`getChatList: Formatted chat list length: ${formattedChatList.length}`);
 
-    return res.json({
+    const response = {
       success: true,
       page,
       limit,
       total: chatMap.size,
       chats: formattedChatList,
-    });
+    };
+    console.log(`getChatList: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
     console.error(`getChatList: Error: ${err.message}`);
-    return res.status(500).json({ success: false, error: "Server error", details: err.message });
+    return res.status(500).json({
+      success: false,
+      error: "Server error",
+      details: err.message,
+    });
   }
 };
 
@@ -464,11 +611,13 @@ export const getChatList = async (req, res) => {
  */
 export const upsertContact = async (req, res) => {
   try {
+    console.log(`upsertContact: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
     const { phone, customName } = req.body;
     const userId = req.user._id;
 
     const normalizedPhone = normalizePhoneNumber(phone);
     if (!normalizedPhone) {
+      console.error("upsertContact: Valid phone number is required");
       return res.status(400).json({ success: false, error: "Valid phone number is required" });
     }
 
@@ -477,6 +626,7 @@ export const upsertContact = async (req, res) => {
       { customName: customName?.trim() || "Unknown" },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+    console.log(`upsertContact: Contact saved for phone: ${normalizedPhone}, customName: ${contact.customName}`);
 
     return res.json({
       success: true,
@@ -497,10 +647,12 @@ export const upsertContact = async (req, res) => {
  */
 export const upsertMultipleContacts = async (req, res) => {
   try {
+    console.log(`upsertMultipleContacts: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
     const { contacts } = req.body;
     const userId = req.user._id;
 
     if (!Array.isArray(contacts) || contacts.length === 0) {
+      console.error("upsertMultipleContacts: Contacts array is invalid or empty");
       return res.status(400).json({ success: false, error: "Contacts array is required" });
     }
 
@@ -508,6 +660,7 @@ export const upsertMultipleContacts = async (req, res) => {
     const phoneNumbers = [];
     for (const contact of contacts) {
       if (!contact.phone || typeof contact.phone !== "string") {
+        console.error(`upsertMultipleContacts: Invalid contact: ${JSON.stringify(contact)}`);
         return res.status(400).json({ success: false, error: "Each contact must have a valid phone number" });
       }
       const normalizedPhone = normalizePhoneNumber(contact.phone);
@@ -521,17 +674,23 @@ export const upsertMultipleContacts = async (req, res) => {
       });
     }
 
-    await Contact.bulkWrite(operations);
-    const updatedContacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    console.log(`upsertMultipleContacts: Performing bulk write for ${operations.length} contacts`);
+    const result = await Contact.bulkWrite(operations);
+    console.log(`upsertMultipleContacts: Bulk write result: ${JSON.stringify(result)}`);
 
-    return res.json({
+    const updatedContacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    console.log(`upsertMultipleContacts: Retrieved ${updatedContacts.length} updated contacts`);
+
+    const response = {
       success: true,
       message: "Contacts saved successfully",
-      contacts: updatedContacts.map(c => ({
-        phone: c.phone,
-        customName: c.customName,
+      contacts: updatedContacts.map((contact) => ({
+        phone: contact.phone,
+        customName: contact.customName,
       })),
-    });
+    };
+    console.log(`upsertMultipleContacts: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    return res.json(response);
   } catch (err) {
     console.error(`upsertMultipleContacts: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error", details: err.message });
