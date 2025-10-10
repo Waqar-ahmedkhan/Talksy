@@ -1,17 +1,11 @@
 import mongoose from "mongoose";
-import { normalizePhoneNumber } from "../utils/phone.js";
 
 const userSchema = new mongoose.Schema({
-  phone: {
-    type: String,
-    required: true,
-    unique: true,
-    set: normalizePhoneNumber, // Auto-normalize on save
-  },
-  displayName: String,
+  phone: { type: String, required: true, unique: true },
+  displayName: { type: String, required: true },
   online: { type: Boolean, default: false },
-  lastSeen: Date,
-  musicUrl: String,
-}, { timestamps: true });
+  lastSeen: { type: Date, default: Date.now },
+  musicUrl: { type: String, default: null } // URL to profile music
+});
 
 export default mongoose.model("User", userSchema);
