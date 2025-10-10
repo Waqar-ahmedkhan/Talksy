@@ -1,9 +1,9 @@
-// controllers/profile.controller.js
 import jwt from "jsonwebtoken";
 import Profile from "../models/Profile.js";
 import User from "../models/User.js";
 import Chat from "../models/Chat.js";
 import Contact from "../models/Contact.js";
+import { normalizePhoneNumber } from "../utils/phone.js"; // New import for normalization
 
 /**
  * Middleware to verify JWT token and fetch user _id
@@ -27,17 +27,19 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(403).json({ success: false, error: "Invalid token: Phone number missing" });
     }
 
+    const normalizedPhone = normalizePhoneNumber(decoded.phone); // Normalize here
+
     // Fetch user from database to get _id
-    const user = await User.findOne({ phone: decoded.phone }).select("_id phone");
+    const user = await User.findOne({ phone: normalizedPhone }).select("_id phone");
     if (!user) {
-      console.error(`authenticateToken: No user found for phone: ${decoded.phone}`);
+      console.error(`authenticateToken: No user found for phone: ${normalizedPhone}`);
       return res.status(404).json({ success: false, error: "User not found" });
     }
 
     // Attach user data to request
     req.user = {
       _id: user._id,
-      phone: decoded.phone,
+      phone: normalizedPhone,
       iat: decoded.iat,
       exp: decoded.exp,
     };
@@ -54,11 +56,12 @@ export const authenticateToken = async (req, res, next) => {
  */
 const formatProfile = (profile, user, customName = null) => {
   console.log(`formatProfile: Formatting profile for phone: ${profile?.phone || "unknown"}, customName: ${customName}`);
+  const fallbackCustomName = customName || profile?.displayName || "Unknown"; // Fallback to displayName or "Unknown"
   const formatted = {
     id: profile?._id || null,
     userId: user?._id || null,
     phone: profile?.phone || null,
-    displayName: customName || profile?.displayName || "Unknown",
+    displayName: fallbackCustomName, // Use fallback here
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -66,7 +69,7 @@ const formatProfile = (profile, user, customName = null) => {
     createdAt: profile?.createdAt || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
-    customName,
+    customName: fallbackCustomName,
   };
   console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
   return formatted;
@@ -93,7 +96,7 @@ export const createProfile = async (req, res) => {
     }
 
     const { displayName, isVisible = false, isNumberVisible = false, avatarUrl = "" } = req.body;
-    const phone = req.user?.phone;
+    const phone = normalizePhoneNumber(req.user?.phone); // Normalize
 
     if (!phone) {
       console.error("createProfile: Phone number not found in token");
@@ -143,9 +146,15 @@ export const createProfile = async (req, res) => {
       console.log(`createProfile: Existing user found for phone: ${phone}, _id: ${user._id}`);
     }
 
-    // Fetch customName (optional, as user rarely assigns customName to self)
-    const contact = await Contact.findOne({ userId: req.user._id, phone }).select("customName");
-    const customName = contact?.customName || null;
+    // Ensure a Contact record exists for the user's own phone, with fallback customName
+    const contact = await Contact.findOneAndUpdate(
+      { userId: user._id, phone },
+      { customName: displayName.trim() }, // Default to displayName
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    console.log(`createProfile: Ensured Contact record for phone: ${phone}, customName: ${contact.customName}`);
+
+    const customName = contact?.customName || displayName.trim() || "Unknown";
     console.log(`createProfile: Custom name for phone ${phone}: ${customName}`);
 
     return res.status(201).json({
@@ -164,20 +173,21 @@ export const createProfile = async (req, res) => {
  */
 export const getMyProfile = async (req, res) => {
   try {
-    console.log(`getMyProfile: Fetching profile for phone: ${req.user.phone}, userId: ${req.user._id}`);
-    const profile = await Profile.findOne({ phone: req.user.phone });
+    const phone = normalizePhoneNumber(req.user.phone); // Normalize
+    console.log(`getMyProfile: Fetching profile for phone: ${phone}, userId: ${req.user._id}`);
+    const profile = await Profile.findOne({ phone });
     if (!profile) {
-      console.error(`getMyProfile: Profile not found for phone: ${req.user.phone}`);
+      console.error(`getMyProfile: Profile not found for phone: ${phone}`);
       return res.status(404).json({ success: false, error: "Profile not found" });
     }
 
-    const user = await User.findOne({ phone: req.user.phone });
-    console.log(`getMyProfile: User ${user ? "found" : "not found"} for phone: ${req.user.phone}`);
+    const user = await User.findOne({ phone });
+    console.log(`getMyProfile: User ${user ? "found" : "not found"} for phone: ${phone}`);
 
-    // Fetch customName (optional, as user rarely assigns customName to self)
-    const contact = await Contact.findOne({ userId: req.user._id, phone: req.user.phone }).select("customName");
-    const customName = contact?.customName || null;
-    console.log(`getMyProfile: Custom name for phone ${req.user.phone}: ${customName}`);
+    // Fetch customName with fallback
+    const contact = await Contact.findOne({ userId: req.user._id, phone }).select("customName");
+    const customName = contact?.customName || profile.displayName || "Unknown";
+    console.log(`getMyProfile: Custom name for phone ${phone}: ${customName}`);
 
     return res.json({
       success: true,
@@ -206,23 +216,28 @@ export const getPublicProfiles = async (req, res) => {
       .sort({ createdAt: -1 });
     console.log(`getPublicProfiles: Found ${publicProfiles.length} public profiles`);
 
-    const phoneNumbers = publicProfiles.map((p) => p.phone);
+    const phoneNumbers = publicProfiles.map((p) => normalizePhoneNumber(p.phone)); // Normalize
     const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
     console.log(`getPublicProfiles: Found ${users.length} users for phone numbers`);
-    const userMap = new Map(users.map((u) => [u.phone, u]));
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
-    // Fetch custom names from Contact model
+    // Fetch custom names from Contact model with fallback
     const contacts = await Contact.find({ userId: req.user._id, phone: { $in: phoneNumbers } }).select("phone customName");
     console.log(`getPublicProfiles: Found ${contacts.length} contacts for custom names`);
-    const contactMap = new Map(contacts.map((c) => [c.phone, c.customName || null]));
+    const contactMap = new Map(contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null]));
+
+    // Apply fallback in mapping
+    const profilesWithFallback = publicProfiles.map((profile) => {
+      const normPhone = normalizePhoneNumber(profile.phone);
+      const customName = contactMap.get(normPhone) || profile.displayName || "Unknown";
+      return formatProfile(profile, userMap.get(normPhone), customName);
+    });
 
     const response = {
       success: true,
       page,
       limit,
-      profiles: publicProfiles.map((profile) =>
-        formatProfile(profile, userMap.get(profile.phone), contactMap.get(profile.phone))
-      ),
+      profiles: profilesWithFallback,
     };
     console.log(`getPublicProfiles: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
     return res.json(response);
@@ -254,7 +269,7 @@ export const getProfilesFromContacts = async (req, res) => {
 
     if (typeof contacts[0] === "string") {
       console.log("getProfilesFromContacts: Processing contacts as array of strings");
-      phoneNumbers = contacts;
+      phoneNumbers = contacts.map(normalizePhoneNumber); // Normalize
       // Fetch custom names from Contact model
       console.log(`getProfilesFromContacts: Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
       const userContacts = await Contact.find({
@@ -263,8 +278,9 @@ export const getProfilesFromContacts = async (req, res) => {
       }).select("phone customName");
       console.log(`getProfilesFromContacts: Found ${userContacts.length} contacts in Contact model`);
       userContacts.forEach((contact) => {
-        console.log(`getProfilesFromContacts: Mapping contact: ${contact.phone} -> ${contact.customName || null}`);
-        contactMap.set(contact.phone, contact.customName || null);
+        const normPhone = normalizePhoneNumber(contact.phone);
+        console.log(`getProfilesFromContacts: Mapping contact: ${normPhone} -> ${contact.customName || null}`);
+        contactMap.set(normPhone, contact.customName || null);
       });
     } else {
       console.log("getProfilesFromContacts: Processing contacts as array of objects");
@@ -273,9 +289,10 @@ export const getProfilesFromContacts = async (req, res) => {
           console.error(`getProfilesFromContacts: Invalid contact: ${JSON.stringify(contact)}`);
           return res.status(400).json({ success: false, error: "Each contact must have a valid phone number" });
         }
-        phoneNumbers.push(contact.phone);
-        contactMap.set(contact.phone, contact.customName || null);
-        console.log(`getProfilesFromContacts: Mapping contact: ${contact.phone} -> ${contact.customName || null}`);
+        const normPhone = normalizePhoneNumber(contact.phone);
+        phoneNumbers.push(normPhone);
+        contactMap.set(normPhone, contact.customName || null);
+        console.log(`getProfilesFromContacts: Mapping contact: ${normPhone} -> ${contact.customName || null}`);
       }
       // Merge with Contact model data to ensure consistency
       const userContacts = await Contact.find({
@@ -284,9 +301,10 @@ export const getProfilesFromContacts = async (req, res) => {
       }).select("phone customName");
       console.log(`getProfilesFromContacts: Found ${userContacts.length} contacts for merging`);
       userContacts.forEach((contact) => {
-        if (!contactMap.has(contact.phone)) {
-          contactMap.set(contact.phone, contact.customName || null);
-          console.log(`getProfilesFromContacts: Merged contact: ${contact.phone} -> ${contact.customName || null}`);
+        const normPhone = normalizePhoneNumber(contact.phone);
+        if (!contactMap.has(normPhone)) {
+          contactMap.set(normPhone, contact.customName || null);
+          console.log(`getProfilesFromContacts: Merged contact: ${normPhone} -> ${contact.customName || null}`);
         }
       });
     }
@@ -304,13 +322,18 @@ export const getProfilesFromContacts = async (req, res) => {
       phone: { $in: phoneNumbers },
     }).select("phone online lastSeen");
     console.log(`getProfilesFromContacts: Found ${users.length} users`);
-    const userMap = new Map(users.map((u) => [u.phone, u]));
+    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
+
+    // Apply fallback
+    const profilesWithFallback = matchedProfiles.map((profile) => {
+      const normPhone = normalizePhoneNumber(profile.phone);
+      const customName = contactMap.get(normPhone) || profile.displayName || "Unknown";
+      return formatProfile(profile, userMap.get(normPhone), customName);
+    });
 
     const response = {
       success: true,
-      profiles: matchedProfiles.map((profile) =>
-        formatProfile(profile, userMap.get(profile.phone), contactMap.get(profile.phone))
-      ),
+      profiles: profilesWithFallback,
     };
     console.log(`getProfilesFromContacts: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
     return res.json(response);
@@ -346,8 +369,8 @@ const formatChat = (chat) => {
 export const getProfileWithChat = async (req, res) => {
   try {
     console.log(`getProfileWithChat: Request params: ${JSON.stringify(req.params)}, userId: ${req.user._id}`);
-    const myPhone = req.user.phone;
-    const targetPhone = req.params.phone;
+    const myPhone = normalizePhoneNumber(req.user.phone); // Normalize
+    const targetPhone = normalizePhoneNumber(req.params.phone); // Normalize
 
     if (!targetPhone) {
       console.error("getProfileWithChat: Target phone number is required");
@@ -369,9 +392,9 @@ export const getProfileWithChat = async (req, res) => {
     const targetUser = await User.findOne({ phone: targetPhone });
     console.log(`getProfileWithChat: Target user ${targetUser ? "found" : "not found"} for phone: ${targetPhone}`);
 
-    // Fetch customName for target profile
+    // Fetch customName with fallback
     const contact = await Contact.findOne({ userId: req.user._id, phone: targetPhone }).select("customName");
-    const customName = contact?.customName || null;
+    const customName = contact?.customName || targetProfile.displayName || "Unknown";
     console.log(`getProfileWithChat: Custom name for phone ${targetPhone}: ${customName}`);
 
     const chats = await Chat.find({
@@ -398,26 +421,12 @@ export const getProfileWithChat = async (req, res) => {
 };
 
 /**
- * Normalize phone number
- */
-const normalizePhoneNumber = (phone) => {
-  if (!phone) return phone;
-  let normalized = phone.trim();
-  if (!normalized.startsWith("+")) {
-    normalized = `+${normalized}`;
-  }
-  normalized = normalized.replace(/[\s-]/g, "");
-  console.log(`normalizePhoneNumber: Normalized phone: ${phone} -> ${normalized}`);
-  return normalized;
-};
-
-/**
  * Get Chat List
  */
 export const getChatList = async (req, res) => {
   try {
     console.log(`getChatList: Request query: ${JSON.stringify(req.query)}, user: ${JSON.stringify(req.user)}`);
-    const myPhone = normalizePhoneNumber(req.user?.phone);
+    const myPhone = normalizePhoneNumber(req.user?.phone); // Normalize
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -498,7 +507,15 @@ export const getChatList = async (req, res) => {
       });
     } catch (contactError) {
       console.error(`getChatList: Error querying Contact model: ${contactError.message}`);
-      console.log("getChatList: Proceeding without custom names due to Contact query error");
+      // Fallback to Profile displayName
+      const profiles = await Profile.find({ phone: { $in: phoneNumbers } }).select("phone displayName");
+      profiles.forEach((profile) => {
+        const normalizedPhone = normalizePhoneNumber(profile.phone);
+        if (!contactMap.has(normalizedPhone)) {
+          contactMap.set(normalizedPhone, profile.displayName || "Unknown");
+        }
+      });
+      console.log(`getChatList: Fallback to ${profiles.length} profile display names`);
     }
 
     const chatMap = new Map();
@@ -551,11 +568,12 @@ export const getChatList = async (req, res) => {
 
     const formattedChatList = chatList.map((item) => {
       const normalizedPhone = normalizePhoneNumber(item.profile?.phone);
+      const customName = contactMap.get(normalizedPhone) || item.profile.displayName || "Unknown";
       return {
         profile: formatProfile(
           item.profile,
           userMap.get(normalizedPhone),
-          contactMap.get(normalizedPhone)
+          customName
         ),
         latestMessage: formatChat(item.latestMessage),
         unreadCount: item.unreadCount,
@@ -592,17 +610,22 @@ export const upsertContact = async (req, res) => {
     const { phone, customName } = req.body;
     const userId = req.user._id;
 
-    if (!phone || typeof phone !== "string") {
+    const normalizedPhone = normalizePhoneNumber(phone); // Normalize
+    if (!normalizedPhone) {
       console.error("upsertContact: Valid phone number is required");
       return res.status(400).json({ success: false, error: "Valid phone number is required" });
     }
 
+    // Fetch profile to get displayName as fallback
+    const profile = await Profile.findOne({ phone: normalizedPhone }).select("displayName");
+    const fallbackName = profile?.displayName || "Unknown";
+
     const contact = await Contact.findOneAndUpdate(
-      { userId, phone },
-      { customName: customName?.trim() || null },
+      { userId, phone: normalizedPhone },
+      { customName: customName?.trim() || fallbackName },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
-    console.log(`upsertContact: Contact saved for phone: ${phone}, customName: ${customName}`);
+    console.log(`upsertContact: Contact saved for phone: ${normalizedPhone}, customName: ${contact.customName}`);
 
     return res.json({
       success: true,
