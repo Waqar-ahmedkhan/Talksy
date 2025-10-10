@@ -54,12 +54,12 @@ export const authenticateToken = async (req, res, next) => {
  */
 const formatProfile = (profile, user, customName = null) => {
   console.log(`formatProfile: Formatting profile for phone: ${profile?.phone || "unknown"}, customName: ${customName}`);
-  const nameToUse = customName || profile?.displayName || "Unknown";
   const formatted = {
     id: profile?._id || null,
     userId: user?._id || null,
     phone: profile?.phone || null,
-    displayName: nameToUse, // Use customName from Contact
+    displayName: profile?.displayName || "Unknown", // Always from Profile
+    customName: customName || profile?.displayName || "Unknown", // Prioritize Contact.customName
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -67,7 +67,6 @@ const formatProfile = (profile, user, customName = null) => {
     createdAt: profile?.createdAt || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
-    customName: nameToUse, // Same as displayName
   };
   console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
   return formatted;
@@ -143,7 +142,7 @@ export const createProfile = async (req, res) => {
       console.log(`createProfile: Existing user found for phone: ${phone}, _id: ${user._id}`);
     }
 
-    // Do not overwrite existing Contact.customName
+    // Only create Contact if it doesn't exist, preserve existing customName
     const existingContact = await Contact.findOne({ userId: user._id, phone });
     if (!existingContact) {
       const contact = new Contact({
@@ -159,7 +158,6 @@ export const createProfile = async (req, res) => {
 
     const contact = await Contact.findOne({ userId: user._id, phone }).select("customName");
     const customName = contact?.customName || displayName.trim() || "Unknown";
-    console.log(`createProfile: Custom name for phone ${phone}: ${customName}`);
 
     return res.status(201).json({
       success: true,
@@ -207,7 +205,7 @@ export const getMyProfile = async (req, res) => {
  */
 export const getPublicProfiles = async (req, res) => {
   try {
-    console.log(`getPublicProfiles: Request query: ${JSON.stringify(req.query)}, userId: ${req.user?._id || "unauthenticated"}`);
+    console.log(`getPublicProfiles: Request query: ${JSON.stringify(req.query)}, userId: ${req.user._id}`);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -224,9 +222,7 @@ export const getPublicProfiles = async (req, res) => {
     console.log(`getPublicProfiles: Found ${users.length} users for phone numbers`);
     const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
 
-    const contacts = req.user?._id
-      ? await Contact.find({ userId: req.user._id, phone: { $in: phoneNumbers } }).select("phone customName")
-      : [];
+    const contacts = await Contact.find({ userId: req.user._id, phone: { $in: phoneNumbers } }).select("phone customName");
     console.log(`getPublicProfiles: Found ${contacts.length} contacts for custom names`);
     const contactMap = new Map(contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null]));
 
@@ -553,7 +549,7 @@ export const getChatList = async (req, res) => {
     const chatList = Array.from(chatMap.values())
       .sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
-        if (!b.pinned && a.pinned) return 1;
+        if (!a.pinned && b.pinned) return 1;
         return new Date(b.latestMessage.createdAt) - new Date(a.latestMessage.createdAt);
       })
       .slice(skip, skip + limit);
