@@ -265,14 +265,14 @@ export const initGroupSocket = (server) => {
           pictureUrl: pictureUrl || null,
         });
 
-        const group = new Group({
-          name,
-          channelId: channelId || null, // Optional: Set to null if not provided
-          createdBy: userId,
-          members: [...new Set([userId, ...members])],
-          musicUrl: musicUrl || null,
-          pictureUrl: pictureUrl || null,
-        });
+        // const group = new Group({
+        //   name,
+        //   channelId: channelId || null, // Optional: Set to null if not provided
+        //   createdBy: userId,
+        //   members: [...new Set([userId, ...members])],
+        //   musicUrl: musicUrl || null,
+        //   pictureUrl: pictureUrl || null,
+        // });
 
         await group.save();
         console.log(
