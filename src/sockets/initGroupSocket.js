@@ -3,7 +3,7 @@ import Channel from "../models/Channel.js";
 import Group from "../models/Group.js";
 import Chat from "../models/Chat.js";
 import User from "../models/User.js";
-import Profile from "../models/Profile.js"
+import Profile from "../models/Profile.js";
 import { isValidObjectId } from "mongoose";
 import mongoose from "mongoose";
 
@@ -808,7 +808,7 @@ export const initGroupSocket = (server) => {
         senderId = new mongoose.Types.ObjectId(senderId);
 
         // Step 3: Verify profile exists in database
-        const profile = await Profile.findById(senderId).select("displayName");
+       const profile = await Profile.findById(senderId).select("displayName");
         if (!profile) {
           console.error(
             `[SEND_TEXT_MESSAGE_ERROR] Profile not found in database: senderId=${senderId}, socketId=${socket.id}`
