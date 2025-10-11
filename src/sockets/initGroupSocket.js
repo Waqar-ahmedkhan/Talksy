@@ -16,14 +16,40 @@ export const initGroupSocket = (server) => {
   const onlineUsers = new Map();
   const typingUsers = new Map();
 
-  io.on("connection", (socket) => {
-    console.log(
-      `[GROUP_SOCKET] User connected: socketId=${
-        socket.id
-      }, time=${new Date().toLocaleString("en-PK", {
-        timeZone: "Asia/Karachi",
-      })}`
-    );
+  io.on("connection", async (socket) => {
+  const userId = socket.handshake.auth?.userId;
+
+  if (!userId || !mongoose.isValidObjectId(userId)) {
+    console.warn(`[SOCKET] Invalid userId: ${userId}`);
+    return socket.disconnect(true);
+  }
+
+  let user = await User.findById(userId);
+
+  if (!user) {
+    console.log(`[SOCKET] User not found, creating: ${userId}`);
+
+    // (Optional) fetch from Profile if exists
+    const profile = await Profile.findById(userId);
+
+    user = new User({
+      _id: userId,
+      phone: profile?.phone || `temp_${userId}`,
+      displayName: profile?.displayName || "Guest User",
+      online: true,
+      lastSeen: new Date(),
+    });
+
+    await user.save();
+  }
+
+  // Attach to socket for later use
+  socket.userId = user._id.toString();
+  socket.join(`user_${user._id}`);
+
+  console.log(`[SOCKET] Connected: ${user.displayName} (${socket.userId})`);
+});
+
 
     /** User joins group chatting system */
     socket.on("join_groups", async (userId) => {
@@ -756,6 +782,7 @@ export const initGroupSocket = (server) => {
         callback({ success: false, message: "Server error" });
       }
     });
+
 
 socket.on("send_text_message", async (data, callback) => {
       console.log(
