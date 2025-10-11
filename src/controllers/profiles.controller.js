@@ -68,29 +68,43 @@ export const authenticateToken = async (req, res, next) => {
 /**
  * Helper: Format profile for response
  */
-const formatProfile = (profile, user, customName = null) => {
-  console.log(
-    `formatProfile: Formatting profile for phone: ${
-      profile?.phone || "unknown"
-    }, customName: ${customName}`
-  );
-  const formatted = {
-    id: profile?._id || null,
-    userId: user?._id || null,
-    phone: profile?.phone || null,
-    displayName: customName || profile?.displayName || "Unknown",
-    randomNumber: profile?.randomNumber || "",
-    isVisible: profile?.isVisible ?? false,
-    isNumberVisible: profile?.isNumberVisible ?? false,
-    avatarUrl: profile?.avatarUrl || "",
-    createdAt: profile?.createdAt || null,
-    online: user?.online ?? false,
+// 🔧 Replace your existing formatProfile function with this version
+// It correctly handles: customName > phone (if visible) > displayName
+
+function formatProfile(profile, user, customName) {
+  if (!profile) return null;
+
+  const isNumberVisible = profile?.isNumberVisible !== false; // default true if missing
+  const phone = profile?.phone || null;
+  const displayName = profile?.displayName || "Unknown";
+
+  let nameToShow = null;
+
+  if (customName) {
+    // Highest priority: user's custom name
+    nameToShow = customName;
+  } else if (isNumberVisible && phone) {
+    // Next: visible phone number
+    nameToShow = phone;
+  } else {
+    // Fallback: profile display name
+    nameToShow = displayName;
+  }
+
+  return {
+    _id: profile._id,
+    name: nameToShow,
+    phone: isNumberVisible ? phone : null,
+    displayName: profile.displayName,
+    avatarUrl: profile.avatarUrl || null,
+    isVisible: profile.isVisible,
+    isNumberVisible: profile.isNumberVisible,
+    randomNumber: profile.randomNumber,
+    createdAt: profile.createdAt,
+    online: user?.online || false,
     lastSeen: user?.lastSeen || null,
-    customName,
   };
-  console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
-  return formatted;
-};
+}
 
 /**
  * Generate 11-digit random number
@@ -800,7 +814,11 @@ const normalizePhoneNumber = (phone) => {
 
 export const getChatList = async (req, res) => {
   try {
-    console.log(`getChatList: Request query: ${JSON.stringify(req.query)}, user: ${JSON.stringify(req.user)}`);
+    console.log(
+      `getChatList: Request query: ${JSON.stringify(
+        req.query
+      )}, user: ${JSON.stringify(req.user)}`
+    );
     const myPhone = normalizePhoneNumber(req.user?.phone);
     const userId = req.user?._id;
     const page = parseInt(req.query.page) || 1;
@@ -818,7 +836,8 @@ export const getChatList = async (req, res) => {
       console.error("getChatList: Invalid pagination parameters");
       return res.status(400).json({
         success: false,
-        error: "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+        error:
+          "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
       });
     }
     const skip = (page - 1) * limit;
@@ -827,7 +846,9 @@ export const getChatList = async (req, res) => {
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
       console.error(`getChatList: Profile not found for phone: ${myPhone}`);
-      return res.status(404).json({ success: false, error: "Your profile not found" });
+      return res
+        .status(404)
+        .json({ success: false, error: "Your profile not found" });
     }
     console.log(`getChatList: My profile found: ${myProfile._id}`);
 
@@ -840,7 +861,10 @@ export const getChatList = async (req, res) => {
       ],
     })
       .sort({ pinned: -1, createdAt: -1 })
-      .populate("senderId receiverId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt");
+      .populate(
+        "senderId receiverId",
+        "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt"
+      );
     console.log(`getChatList: Found ${chats.length} chats`);
 
     if (!chats || chats.length === 0) {
@@ -856,39 +880,61 @@ export const getChatList = async (req, res) => {
 
     const phoneNumbers = [
       ...new Set([
-        ...chats.map((chat) => normalizePhoneNumber(chat.senderId?.phone)).filter(Boolean),
-        ...chats.map((chat) => normalizePhoneNumber(chat.receiverId?.phone)).filter(Boolean),
+        ...chats
+          .map((chat) => normalizePhoneNumber(chat.senderId?.phone))
+          .filter(Boolean),
+        ...chats
+          .map((chat) => normalizePhoneNumber(chat.receiverId?.phone))
+          .filter(Boolean),
       ]),
     ];
     console.log(`getChatList: Phone numbers extracted: ${phoneNumbers}`);
 
     console.log(`getChatList: Fetching users for phones: ${phoneNumbers}`);
-    const users = await User.find({ phone: { $in: phoneNumbers } }).select("phone online lastSeen");
+    const users = await User.find({ phone: { $in: phoneNumbers } }).select(
+      "phone online lastSeen"
+    );
     console.log(`getChatList: Found ${users.length} users`);
-    const userMap = new Map(users.map((u) => [normalizePhoneNumber(u.phone), u]));
+    const userMap = new Map(
+      users.map((u) => [normalizePhoneNumber(u.phone), u])
+    );
 
     let contactMap = new Map();
     try {
-      console.log(`getChatList: Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`);
+      console.log(
+        `getChatList: Querying Contact model for userId: ${userId}, phones: ${phoneNumbers}`
+      );
       const contacts = await Contact.find({
         userId,
         phone: { $in: phoneNumbers },
       }).select("phone customName");
-      console.log(`getChatList: Found ${contacts.length} contacts for custom names`);
+      console.log(
+        `getChatList: Found ${contacts.length} contacts for custom names`
+      );
       contacts.forEach((contact) => {
         const normalizedPhone = normalizePhoneNumber(contact.phone);
-        console.log(`getChatList: Mapping contact: ${normalizedPhone} -> ${contact.customName || null}`);
+        console.log(
+          `getChatList: Mapping contact: ${normalizedPhone} -> ${
+            contact.customName || null
+          }`
+        );
         contactMap.set(normalizedPhone, contact.customName || null);
       });
     } catch (contactError) {
-      console.error(`getChatList: Error querying Contact model: ${contactError.message}`);
-      console.log("getChatList: Proceeding without custom names due to Contact query error");
+      console.error(
+        `getChatList: Error querying Contact model: ${contactError.message}`
+      );
+      console.log(
+        "getChatList: Proceeding without custom names due to Contact query error"
+      );
     }
 
     const chatMap = new Map();
     for (const chat of chats) {
       if (!chat.senderId || !chat.receiverId) {
-        console.warn(`getChatList: Chat ${chat._id} missing senderId or receiverId`);
+        console.warn(
+          `getChatList: Chat ${chat._id} missing senderId or receiverId`
+        );
         continue;
       }
 
@@ -899,7 +945,9 @@ export const getChatList = async (req, res) => {
 
       if (!chatMap.has(otherProfileId)) {
         const otherProfile =
-          chat.senderId._id.toString() === myProfile._id.toString() ? chat.receiverId : chat.senderId;
+          chat.senderId._id.toString() === myProfile._id.toString()
+            ? chat.receiverId
+            : chat.senderId;
         chatMap.set(otherProfileId, {
           profile: otherProfile,
           latestMessage: chat,
@@ -912,7 +960,9 @@ export const getChatList = async (req, res) => {
         });
       } else {
         const existing = chatMap.get(otherProfileId);
-        if (new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)) {
+        if (
+          new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
+        ) {
           existing.latestMessage = chat;
           existing.pinned = chat.pinned;
         }
@@ -929,7 +979,10 @@ export const getChatList = async (req, res) => {
       .sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
-        return new Date(b.latestMessage.createdAt) - new Date(a.latestMessage.createdAt);
+        return (
+          new Date(b.latestMessage.createdAt) -
+          new Date(a.latestMessage.createdAt)
+        );
       })
       .slice(skip, skip + limit);
 
@@ -946,7 +999,9 @@ export const getChatList = async (req, res) => {
         pinned: item.pinned,
       };
     });
-    console.log(`getChatList: Formatted chat list length: ${formattedChatList.length}`);
+    console.log(
+      `getChatList: Formatted chat list length: ${formattedChatList.length}`
+    );
 
     const response = {
       success: true,
@@ -955,7 +1010,12 @@ export const getChatList = async (req, res) => {
       total: chatMap.size,
       chats: formattedChatList,
     };
-    console.log(`getChatList: Response prepared: ${JSON.stringify(response).substring(0, 200)}...`);
+    console.log(
+      `getChatList: Response prepared: ${JSON.stringify(response).substring(
+        0,
+        200
+      )}...`
+    );
     return res.json(response);
   } catch (err) {
     console.error(`getChatList: Error: ${err.message}`);
