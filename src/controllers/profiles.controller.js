@@ -69,16 +69,34 @@ export const authenticateToken = async (req, res, next) => {
  * Helper: Format profile for response
  */
 const formatProfile = (profile, user, customName = null) => {
+  // Log for debug
   console.log(
-    `formatProfile: Formatting profile for phone: ${
-      profile?.phone || "unknown"
-    }, customName: ${customName}`
+    `formatProfile: Formatting profile for phone: ${profile?.phone || "unknown"}, customName: ${customName}`
   );
+
+  // Determine display name priority
+  let mainName;
+
+  if (customName && customName.trim() !== "") {
+    mainName = customName; // ✅ Custom name first
+  } else if (profile?.isNumberVisible && profile?.phone) {
+    mainName = profile.phone; // ✅ Phone if visible
+  } else {
+    mainName = profile?.displayName || "Unknown"; // ✅ Fallback
+  }
+
+  // ✅ Combine both custom + number if visible
+  const displayName =
+    customName && profile?.isNumberVisible && profile?.phone
+      ? `${customName} (${profile.phone})`
+      : mainName;
+
   const formatted = {
     id: profile?._id || null,
     userId: user?._id || null,
     phone: profile?.phone || null,
-    displayName: customName || profile?.displayName || "Unknown",
+    customName: customName || null,
+    displayName, // ✅ final resolved display name
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -86,11 +104,16 @@ const formatProfile = (profile, user, customName = null) => {
     createdAt: profile?.createdAt || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
-    customName,
   };
+
+  console.log(
+    `formatProfile: Final displayName="${displayName}", phone="${profile?.phone}", customName="${customName}"`
+  );
   console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
+
   return formatted;
 };
+
 
 /**
  * Generate 11-digit random number
