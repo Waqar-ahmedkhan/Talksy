@@ -68,35 +68,22 @@ export const authenticateToken = async (req, res, next) => {
 /**
  * Helper: Format profile for response
  */
-const formatProfile = (profile, user, customName = null) => {
-  // Log for debug
-  console.log(
-    `formatProfile: Formatting profile for phone: ${profile?.phone || "unknown"}, customName: ${customName}`
-  );
-
-  // Determine display name priority
-  let mainName;
-
-  if (customName && customName.trim() !== "") {
-    mainName = customName; // ✅ Custom name first
-  } else if (profile?.isNumberVisible && profile?.phone) {
-    mainName = profile.phone; // ✅ Phone if visible
-  } else {
-    mainName = profile?.displayName || "Unknown"; // ✅ Fallback
-  }
-
-  // ✅ Combine both custom + number if visible
-  const displayName =
-    customName && profile?.isNumberVisible && profile?.phone
-      ? `${customName} (${profile.phone})`
-      : mainName;
+export const formatProfile = (profile, user, customName = null) => {
+  const phone = profile?.phone || "unknown";
+  console.log(`formatProfile: Formatting profile for phone: ${phone}, customName: ${customName}`);
 
   const formatted = {
     id: profile?._id || null,
     userId: user?._id || null,
     phone: profile?.phone || null,
-    customName: customName || null,
-    displayName, // ✅ final resolved display name
+
+    // 🧠 Show custom name first, otherwise number, otherwise displayName
+    displayName:
+      customName ||
+      (profile?.isNumberVisible && profile?.phone) ||
+      profile?.displayName ||
+      "Unknown",
+
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -104,15 +91,15 @@ const formatProfile = (profile, user, customName = null) => {
     createdAt: profile?.createdAt || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
+
+    // 🧩 Always return customName separately too
+    customName: customName || null,
   };
 
-  console.log(
-    `formatProfile: Final displayName="${displayName}", phone="${profile?.phone}", customName="${customName}"`
-  );
   console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
-
   return formatted;
 };
+
 
 
 /**
