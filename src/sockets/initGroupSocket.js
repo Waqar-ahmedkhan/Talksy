@@ -757,422 +757,488 @@ export const initGroupSocket = (server) => {
       }
     });
 
-
-socket.on("send_text_message", async (data, callback) => {
-  console.log(
-    `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
-      socket.id
-    }, userId="${socket.userId}" (type: ${typeof socket.userId}), data=${JSON.stringify(
-      data,
-      null,
-      2
-    )}`
-  );
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    const { groupId, content } = data;
-    let senderIdStr = socket.userId;
-
-    // Step 1: Validate socket.userId and check onlineUsers
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 1: Validating socket.userId: "${senderIdStr}"`);
-    if (!senderIdStr || typeof senderIdStr !== "string") {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing senderId: "${senderIdStr}" (socketId=${socket.id})`
+    socket.on("send_text_message", async (data, callback) => {
+      const timestamp = new Date().toISOString();
+      console.log(
+        `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
+          socket.id
+        }, userId="${
+          socket.userId
+        }" (type: ${typeof socket.userId}), data=${JSON.stringify(
+          data,
+          null,
+          2
+        )}, timestamp=${timestamp}`
       );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "Not authenticated - please join groups first",
-      });
-    }
 
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Checking if user in onlineUsers: has=${onlineUsers.has(senderIdStr)}`);
-    if (!onlineUsers.has(senderIdStr)) {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] User not in onlineUsers: senderId=${senderIdStr}, socketId=${socket.id}`
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "User not connected - please join groups first",
-      });
-    }
-
-    // Step 2: Validate and cast senderId
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 2: Validating ObjectId: isValid=${isValidObjectId(senderIdStr)}`);
-    if (!isValidObjectId(senderIdStr)) {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] senderId is not a valid ObjectId: "${senderIdStr}" (socketId=${socket.id})`
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "Invalid user ID format",
-      });
-    }
-    const senderId = new mongoose.Types.ObjectId(senderIdStr);
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Casted senderId: ${senderId.toString()}`);
-
-    // Step 3: Check if User exists and get displayName
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 3: Querying User by _id: ${senderId.toString()}`);
-    const user = await User.findById(senderId).select("displayName phone").session(session);
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] User query result: ${user ? 'Found' : 'Not Found'}`);
-    if (!user) {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] User not found in database: senderId=${senderId}, socketId=${socket.id}`
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "User not found - please register or verify your account",
-      });
-    }
-    const senderDisplayName = user.displayName;
-    console.log(
-      `[SEND_TEXT_MESSAGE_DEBUG] Found existing user: senderId=${senderId}, phone=${user.phone}, displayName=${senderDisplayName}`
-    );
-
-    // Step 4: Validate groupId
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 4: Validating groupId: "${groupId}", isValid=${isValidObjectId(groupId)}`);
-    if (!groupId || !isValidObjectId(groupId)) {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing groupId: "${groupId}"`
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "Invalid group ID",
-      });
-    }
-    const castGroupId = new mongoose.Types.ObjectId(groupId);
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Casted groupId: ${castGroupId.toString()}`);
-
-    // Step 5: Validate content
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 5: Validating content: length=${content ? content.trim().length : 0}`);
-    if (!content || content.trim() === "") {
-      console.error(`[SEND_TEXT_MESSAGE_ERROR] Empty content: "${content}"`);
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "Message content cannot be empty",
-      });
-    }
-
-    // Step 6: Verify group and membership
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 6: Querying Group by _id: ${castGroupId.toString()}`);
-    const group = await Group.findById(castGroupId).session(session);
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Group query result: ${group ? 'Found' : 'Not Found'}`);
-    if (!group) {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${castGroupId}`
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "Group not found",
-      });
-    }
-
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Checking membership: members=${group.members.map(id => id.toString()).join(', ')}`);
-    const isMember = group.members.some((id) => id.equals(senderId));
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Is member: ${isMember}`);
-    if (!isMember) {
-      console.error(
-        `[SEND_TEXT_MESSAGE_ERROR] Not authorized: senderId=${senderId}, groupId=${castGroupId}`
-      );
-      await session.abortTransaction();
-      session.endSession();
-      return callback({
-        success: false,
-        message: "Not authorized to send message",
-      });
-    }
-
-    // Step 7: Create and save Chat document with displayName
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 7: Creating Chat document`);
-    const chat = new Chat({
-      senderId,
-      senderDisplayName, // Store displayName directly
-      groupId: castGroupId,
-      type: "text",
-      content: content.trim(),
-      status: "sent",
-      deletedFor: [],
-    });
-
-    await chat.save({ session });
-    console.log(
-      `[SEND_TEXT_MESSAGE_DEBUG] Message saved: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, rawChat=${JSON.stringify(
-        chat.toObject(),
-        null,
-        2
-      )}`
-    );
-
-    // Step 8: Commit transaction
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 8: Committing transaction`);
-    await session.commitTransaction();
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Transaction committed successfully`);
-
-    // Step 9: Emit message to group room
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 9: Emitting message to group room`);
-    const groupRoom = `group_${castGroupId}`;
-    io.to(groupRoom).emit("new_text_message", { message: chat });
-    console.log(
-      `[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}`
-    );
-
-    // Step 10: Update message status to delivered
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 10: Scheduling status update to delivered`);
-    setTimeout(async () => {
       try {
-        const updatedChat = await Chat.findByIdAndUpdate(
-          chat._id,
-          { status: "delivered" },
-          { new: true }
-        );
+        const { groupId, content } = data;
+        const senderIdStr = socket.userId;
+
+        // Step 1: Validate socket.userId
         console.log(
-          `[SEND_TEXT_MESSAGE_DEBUG] Status update query result: ${updatedChat ? 'Updated' : 'Not Found'}`
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 1: Validating socket.userId: "${senderIdStr}", timestamp=${timestamp}`
         );
-        if (updatedChat) {
-          io.to(groupRoom).emit("message_status_update", {
-            messageId: chat._id,
-            status: "delivered",
+        if (!senderIdStr) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] socket.userId is null or undefined: socketId=${socket.id}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message:
+              "Authentication failed: user ID is missing. Please join groups first.",
           });
-          console.log(
-            `[SEND_TEXT_MESSAGE_DEBUG] Updated status to delivered: messageId=${chat._id}`
-          );
-        } else {
-          console.warn(
-            `[SEND_TEXT_MESSAGE_WARN] Failed to update status for messageId=${chat._id}`
-          );
         }
+        if (typeof senderIdStr !== "string") {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] socket.userId is not a string: value="${senderIdStr}", type=${typeof senderIdStr}, socketId=${
+              socket.id
+            }, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Authentication failed: invalid user ID format.",
+          });
+        }
+
+        // Step 2: Check onlineUsers
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 2: Checking onlineUsers: has=${onlineUsers.has(
+            senderIdStr
+          )}, timestamp=${timestamp}`
+        );
+        if (!onlineUsers.has(senderIdStr)) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] User not in onlineUsers: senderId=${senderIdStr}, socketId=${socket.id}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "User not connected - please join groups first.",
+          });
+        }
+
+        // Step 3: Validate and cast senderId
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 3: Validating ObjectId: isValid=${isValidObjectId(
+            senderIdStr
+          )}, timestamp=${timestamp}`
+        );
+        if (!isValidObjectId(senderIdStr)) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] senderId is not a valid ObjectId: "${senderIdStr}", socketId=${socket.id}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Invalid user ID format.",
+          });
+        }
+        const senderId = new mongoose.Types.ObjectId(senderIdStr);
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Casted senderId: ${senderId.toString()}, timestamp=${timestamp}`
+        );
+
+        // Step 4: Check if User exists and get displayName
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 4: Querying User by _id: ${senderId.toString()}, timestamp=${timestamp}`
+        );
+        const user = await User.findById(senderId).select("displayName phone");
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] User query result: ${
+            user ? "Found" : "Not Found"
+          }, user=${JSON.stringify(
+            user ? user.toObject() : null,
+            null,
+            2
+          )}, timestamp=${timestamp}`
+        );
+        if (!user) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] User not found in database: senderId=${senderId}, socketId=${socket.id}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "User not found - please register or verify your account.",
+          });
+        }
+        const senderDisplayName = user.displayName;
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Found existing user: senderId=${senderId}, phone=${user.phone}, displayName=${senderDisplayName}, timestamp=${timestamp}`
+        );
+
+        // Step 5: Validate groupId
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 5: Validating groupId: "${groupId}", isValid=${isValidObjectId(
+            groupId
+          )}, timestamp=${timestamp}`
+        );
+        if (!groupId || !isValidObjectId(groupId)) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing groupId: "${groupId}", timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Invalid group ID.",
+          });
+        }
+        const castGroupId = new mongoose.Types.ObjectId(groupId);
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Casted groupId: ${castGroupId.toString()}, timestamp=${timestamp}`
+        );
+
+        // Step 6: Validate content
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 6: Validating content: length=${
+            content ? content.trim().length : 0
+          }, timestamp=${timestamp}`
+        );
+        if (!content || content.trim() === "") {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Empty content: "${content}", timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Message content cannot be empty.",
+          });
+        }
+
+        // Step 7: Verify group and membership
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 7: Querying Group by _id: ${castGroupId.toString()}, timestamp=${timestamp}`
+        );
+        const group = await Group.findById(castGroupId);
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Group query result: ${
+            group ? "Found" : "Not Found"
+          }, group=${JSON.stringify(
+            group ? group.toObject() : null,
+            null,
+            2
+          )}, timestamp=${timestamp}`
+        );
+        if (!group) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Group not found.",
+          });
+        }
+
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Checking membership: members=${group.members
+            .map((id) => id.toString())
+            .join(", ")}, timestamp=${timestamp}`
+        );
+        const isMember = group.members.some((id) => id.equals(senderId));
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Is member: ${isMember}, timestamp=${timestamp}`
+        );
+        if (!isMember) {
+          console.error(
+            `[SEND_TEXT_MESSAGE_ERROR] Not authorized: senderId=${senderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Not authorized to send message.",
+          });
+        }
+
+        // Step 8: Create and save Chat document with displayName
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 8: Creating Chat document, timestamp=${timestamp}`
+        );
+        const chat = new Chat({
+          senderId,
+          senderDisplayName, // Store displayName directly
+          groupId: castGroupId,
+          type: "text",
+          content: content.trim(),
+          status: "sent",
+          deletedFor: [],
+        });
+
+        await chat.save();
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Message saved: messageId=${
+            chat._id
+          }, groupId=${castGroupId}, senderId=${senderId}, rawChat=${JSON.stringify(
+            chat.toObject(),
+            null,
+            2
+          )}, timestamp=${timestamp}`
+        );
+
+        // Step 9: Emit message to group room
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 9: Emitting message to group room, timestamp=${timestamp}`
+        );
+        const groupRoom = `group_${castGroupId}`;
+        io.to(groupRoom).emit("new_text_message", { message: chat });
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}, timestamp=${timestamp}`
+        );
+
+        // Step 10: Update message status to delivered
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 10: Scheduling status update to delivered, timestamp=${timestamp}`
+        );
+        setTimeout(async () => {
+          try {
+            const updateTimestamp = new Date().toISOString();
+            console.log(
+              `[SEND_TEXT_MESSAGE_DEBUG] Updating status for messageId=${chat._id}, timestamp=${updateTimestamp}`
+            );
+            const updatedChat = await Chat.findByIdAndUpdate(
+              chat._id,
+              { status: "delivered" },
+              { new: true }
+            );
+            console.log(
+              `[SEND_TEXT_MESSAGE_DEBUG] Status update query result: ${
+                updatedChat ? "Updated" : "Not Found"
+              }, updatedChat=${JSON.stringify(
+                updatedChat ? updatedChat.toObject() : null,
+                null,
+                2
+              )}, timestamp=${updateTimestamp}`
+            );
+            if (updatedChat) {
+              io.to(groupRoom).emit("message_status_update", {
+                messageId: chat._id,
+                status: "delivered",
+              });
+              console.log(
+                `[SEND_TEXT_MESSAGE_DEBUG] Updated status to delivered: messageId=${chat._id}, timestamp=${updateTimestamp}`
+              );
+            } else {
+              console.warn(
+                `[SEND_TEXT_MESSAGE_WARN] Failed to update status for messageId=${chat._id}, timestamp=${updateTimestamp}`
+              );
+            }
+          } catch (error) {
+            console.error(
+              `[SEND_TEXT_MESSAGE_ERROR] Failed to update status: messageId=${
+                chat._id
+              }, error=${error.message}, stack=${
+                error.stack
+              }, timestamp=${new Date().toISOString()}`
+            );
+          }
+        }, 100);
+
+        // Step 11: Send success response
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Step 11: Sending success response, timestamp=${timestamp}`
+        );
+        callback({ success: true, message: chat });
+        console.log(
+          `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, timestamp=${timestamp}`
+        );
       } catch (error) {
         console.error(
-          `[SEND_TEXT_MESSAGE_ERROR] Failed to update status: messageId=${chat._id}, error=${error.message}, stack=${error.stack}`
+          `[SEND_TEXT_MESSAGE_ERROR] Failed: socketId=${socket.id}, userId="${
+            socket.userId
+          }", error=${error.message}, stack=${
+            error.stack
+          }, timestamp=${new Date().toISOString()}`
         );
+        callback({
+          success: false,
+          message: "Server error saving message.",
+          error: error.message,
+        });
       }
-    }, 100);
-
-    // Step 11: Send success response
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 11: Sending success response`);
-    callback({ success: true, message: chat });
-    console.log(
-      `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
-    );
-  } catch (error) {
-    console.error(
-      `[SEND_TEXT_MESSAGE_ERROR] Failed: socketId=${socket.id}, userId="${socket.userId}", error=${error.message}, stack=${error.stack}`
-    );
-    await session.abortTransaction();
-    callback({
-      success: false,
-      message: "Server error saving message",
-      error: error.message,
     });
-  } finally {
-    session.endSession();
-    console.log(`[SEND_TEXT_MESSAGE_DEBUG] Transaction session ended`);
-  }
-});
-// socket.on("send_text_message", async (data, callback) => {
-//   console.log(
-//     `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
-//       socket.id
-//     }, userId="${socket.userId}" (type: ${typeof socket.userId}), data=${JSON.stringify(
-//       data,
-//       null,
-//       2
-//     )}`
-//   );
 
-//   try {
-//     const { groupId, content } = data;
-//     let senderId = socket.userId;
+    // socket.on("send_text_message", async (data, callback) => {
+    //   console.log(
+    //     `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
+    //       socket.id
+    //     }, userId="${socket.userId}" (type: ${typeof socket.userId}), data=${JSON.stringify(
+    //       data,
+    //       null,
+    //       2
+    //     )}`
+    //   );
 
-//     // Step 1: Validate socket.userId and check onlineUsers
-//     if (!senderId || typeof senderId !== "string") {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing senderId: "${senderId}" (socketId=${socket.id})`
-//       );
-//       return callback({
-//         success: false,
-//         message: "Not authenticated - please join groups first",
-//       });
-//     }
+    //   try {
+    //     const { groupId, content } = data;
+    //     let senderId = socket.userId;
 
-//     // Check if user is in onlineUsers
-//     if (!onlineUsers.has(senderId)) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] User not in onlineUsers: senderId=${senderId}, socketId=${socket.id}`
-//       );
-//       return callback({
-//         success: false,
-//         message: "User not connected - please join groups first",
-//       });
-//     }
+    //     // Step 1: Validate socket.userId and check onlineUsers
+    //     if (!senderId || typeof senderId !== "string") {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing senderId: "${senderId}" (socketId=${socket.id})`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Not authenticated - please join groups first",
+    //       });
+    //     }
 
-//     // Step 2: Validate and cast senderId
-//     if (!isValidObjectId(senderId)) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] senderId is not a valid ObjectId: "${senderId}" (socketId=${socket.id})`
-//       );
-//       return callback({
-//         success: false,
-//         message: "Invalid user ID format",
-//       });
-//     }
-//     senderId = new mongoose.Types.ObjectId(senderId);
+    //     // Check if user is in onlineUsers
+    //     if (!onlineUsers.has(senderId)) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] User not in onlineUsers: senderId=${senderId}, socketId=${socket.id}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "User not connected - please join groups first",
+    //       });
+    //     }
 
-//     // Step 3: Verify user exists in database
-//     const user = await User.findById(senderId).select("displayName");
-//     if (!user) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] User not found in database: senderId=${senderId}, socketId=${socket.id}`
-//       );
-//       return callback({
-//         success: false,
-//         message: "User not found",
-//       });
-//     }
-//     console.log(
-//       `[SEND_TEXT_MESSAGE] Valid sender: senderId=${senderId}, displayName=${user.displayName}`
-//     );
+    //     // Step 2: Validate and cast senderId
+    //     if (!isValidObjectId(senderId)) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] senderId is not a valid ObjectId: "${senderId}" (socketId=${socket.id})`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid user ID format",
+    //       });
+    //     }
+    //     senderId = new mongoose.Types.ObjectId(senderId);
 
-//     // Step 4: Validate groupId
-//     if (!groupId || !isValidObjectId(groupId)) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing groupId: "${groupId}"`
-//       );
-//       return callback({
-//         success: false,
-//         message: "Invalid group ID",
-//       });
-//     }
-//     const castGroupId = new mongoose.Types.ObjectId(groupId);
+    //     // Step 3: Verify user exists in database
+    //     const user = await User.findById(senderId).select("displayName");
+    //     if (!user) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] User not found in database: senderId=${senderId}, socketId=${socket.id}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "User not found",
+    //       });
+    //     }
+    //     console.log(
+    //       `[SEND_TEXT_MESSAGE] Valid sender: senderId=${senderId}, displayName=${user.displayName}`
+    //     );
 
-//     // Step 5: Validate content
-//     if (!content || content.trim() === "") {
-//       console.error(`[SEND_TEXT_MESSAGE_ERROR] Empty content: "${content}"`);
-//       return callback({
-//         success: false,
-//         message: "Message content cannot be empty",
-//       });
-//     }
+    //     // Step 4: Validate groupId
+    //     if (!groupId || !isValidObjectId(groupId)) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] Invalid or missing groupId: "${groupId}"`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid group ID",
+    //       });
+    //     }
+    //     const castGroupId = new mongoose.Types.ObjectId(groupId);
 
-//     // Step 6: Verify group and membership
-//     const group = await Group.findById(castGroupId);
-//     if (!group) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${castGroupId}`
-//       );
-//       return callback({
-//         success: false,
-//         message: "Group not found",
-//       });
-//     }
+    //     // Step 5: Validate content
+    //     if (!content || content.trim() === "") {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] Empty content: "${content}"`);
+    //       return callback({
+    //         success: false,
+    //         message: "Message content cannot be empty",
+    //       });
+    //     }
 
-//     const isMember = group.members.some((id) => id.equals(senderId));
-//     if (!isMember) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] Not authorized: senderId=${senderId}, groupId=${castGroupId}`
-//       );
-//       return callback({
-//         success: false,
-//         message: "Not authorized to send message",
-//       });
-//     }
+    //     // Step 6: Verify group and membership
+    //     const group = await Group.findById(castGroupId);
+    //     if (!group) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] Group not found: groupId=${castGroupId}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Group not found",
+    //       });
+    //     }
 
-//     // Step 7: Create and save Chat document
-//     const chat = new Chat({
-//       senderId,
-//       groupId: castGroupId,
-//       type: "text",
-//       content: content.trim(),
-//       status: "sent",
-//       deletedFor: [],
-//     });
+    //     const isMember = group.members.some((id) => id.equals(senderId));
+    //     if (!isMember) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] Not authorized: senderId=${senderId}, groupId=${castGroupId}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Not authorized to send message",
+    //       });
+    //     }
 
-//     await chat.save();
-//     console.log(
-//       `[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, rawChat=${JSON.stringify(
-//         chat.toObject(),
-//         null,
-//         2
-//       )}`
-//     );
+    //     // Step 7: Create and save Chat document
+    //     const chat = new Chat({
+    //       senderId,
+    //       groupId: castGroupId,
+    //       type: "text",
+    //       content: content.trim(),
+    //       status: "sent",
+    //       deletedFor: [],
+    //     });
 
-//     // Step 8: Populate senderId and verify
-//     await chat.populate("senderId", "displayName");
-//     if (!chat.senderId || !chat.senderId._id) {
-//       console.error(
-//         `[SEND_TEXT_MESSAGE_ERROR] Population failed for messageId=${chat._id}, senderId=${senderId}. Deleting invalid message.`
-//       );
-//       await Chat.findByIdAndDelete(chat._id);
-//       return callback({
-//         success: false,
-//         message: "Sender not found in database after save",
-//       });
-//     }
-//     console.log(
-//       `[SEND_TEXT_MESSAGE] Populated successfully: messageId=${chat._id}, sender displayName=${chat.senderId.displayName}`
-//     );
+    //     await chat.save();
+    //     console.log(
+    //       `[SEND_TEXT_MESSAGE] Message saved: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, rawChat=${JSON.stringify(
+    //         chat.toObject(),
+    //         null,
+    //         2
+    //       )}`
+    //     );
 
-//     // Step 9: Emit message to group room
-//     const groupRoom = `group_${castGroupId}`;
-//     io.to(groupRoom).emit("new_text_message", { message: chat });
-//     console.log(
-//       `[SEND_TEXT_MESSAGE] Emitted new_text_message to groupRoom=${groupRoom}`
-//     );
+    //     // Step 8: Populate senderId and verify
+    //     await chat.populate("senderId", "displayName");
+    //     if (!chat.senderId || !chat.senderId._id) {
+    //       console.error(
+    //         `[SEND_TEXT_MESSAGE_ERROR] Population failed for messageId=${chat._id}, senderId=${senderId}. Deleting invalid message.`
+    //       );
+    //       await Chat.findByIdAndDelete(chat._id);
+    //       return callback({
+    //         success: false,
+    //         message: "Sender not found in database after save",
+    //       });
+    //     }
+    //     console.log(
+    //       `[SEND_TEXT_MESSAGE] Populated successfully: messageId=${chat._id}, sender displayName=${chat.senderId.displayName}`
+    //     );
 
-//     // Step 10: Update message status to delivered
-//     setTimeout(async () => {
-//       const updatedChat = await Chat.findByIdAndUpdate(
-//         chat._id,
-//         { status: "delivered" },
-//         { new: true }
-//       );
-//       if (updatedChat) {
-//         io.to(groupRoom).emit("message_status_update", {
-//           messageId: chat._id,
-//           status: "delivered",
-//         });
-//         console.log(
-//           `[SEND_TEXT_MESSAGE] Updated status to delivered: messageId=${chat._id}`
-//         );
-//       } else {
-//         console.warn(
-//           `[SEND_TEXT_MESSAGE] Failed to update status for messageId=${chat._id}`
-//         );
-//       }
-//     }, 100);
+    //     // Step 9: Emit message to group room
+    //     const groupRoom = `group_${castGroupId}`;
+    //     io.to(groupRoom).emit("new_text_message", { message: chat });
+    //     console.log(
+    //       `[SEND_TEXT_MESSAGE] Emitted new_text_message to groupRoom=${groupRoom}`
+    //     );
 
-//     // Step 11: Send success response
-//     callback({ success: true, message: chat });
-//     console.log(
-//       `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
-//     );
-//   } catch (error) {
-//     console.error(
-//       `[SEND_TEXT_MESSAGE_ERROR] Failed: socketId=${socket.id}, userId="${socket.userId}", error=${error.message}, stack=${error.stack}`
-//     );
-//     callback({
-//       success: false,
-//       message: "Server error saving message",
-//       error: error.message,
-//     });
-//   }
-// });
+    //     // Step 10: Update message status to delivered
+    //     setTimeout(async () => {
+    //       const updatedChat = await Chat.findByIdAndUpdate(
+    //         chat._id,
+    //         { status: "delivered" },
+    //         { new: true }
+    //       );
+    //       if (updatedChat) {
+    //         io.to(groupRoom).emit("message_status_update", {
+    //           messageId: chat._id,
+    //           status: "delivered",
+    //         });
+    //         console.log(
+    //           `[SEND_TEXT_MESSAGE] Updated status to delivered: messageId=${chat._id}`
+    //         );
+    //       } else {
+    //         console.warn(
+    //           `[SEND_TEXT_MESSAGE] Failed to update status for messageId=${chat._id}`
+    //         );
+    //       }
+    //     }, 100);
+
+    //     // Step 11: Send success response
+    //     callback({ success: true, message: chat });
+    //     console.log(
+    //       `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[SEND_TEXT_MESSAGE_ERROR] Failed: socketId=${socket.id}, userId="${socket.userId}", error=${error.message}, stack=${error.stack}`
+    //     );
+    //     callback({
+    //       success: false,
+    //       message: "Server error saving message",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
 
     /** Remove member from group (self-leave or admin removal) */
     // socket.on("remove_group_member", async (data, callback) => {
