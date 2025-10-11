@@ -68,22 +68,19 @@ export const authenticateToken = async (req, res, next) => {
 /**
  * Helper: Format profile for response
  */
-export const formatProfile = (profile, user, customName = null) => {
-  const phone = profile?.phone || "unknown";
-  console.log(`formatProfile: Formatting profile for phone: ${phone}, customName: ${customName}`);
+const formatProfile = (profile, user, customName = null) => {
+  const phone = profile?.phone || "";
+  const name = customName || "Unknown";
+
+  // Combine both: e.g. "John Doe (+923001234567)"
+  const displayName =
+    name && phone ? `${name} (${phone})` : name || phone || "Unknown";
 
   const formatted = {
     id: profile?._id || null,
     userId: user?._id || null,
-    phone: profile?.phone || null,
-
-    // 🧠 Show custom name first, otherwise number, otherwise displayName
-    displayName:
-      customName ||
-      (profile?.isNumberVisible && profile?.phone) ||
-      profile?.displayName ||
-      "Unknown",
-
+    phone,
+    displayName, // 👈 combined version
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -91,12 +88,10 @@ export const formatProfile = (profile, user, customName = null) => {
     createdAt: profile?.createdAt || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen || null,
-
-    // 🧩 Always return customName separately too
-    customName: customName || null,
+    customName: customName || "unknown", // keep separate too
   };
 
-  console.log(`formatProfile: Formatted profile: ${JSON.stringify(formatted)}`);
+  console.log("📞 formatProfile:", JSON.stringify(formatted, null, 2));
   return formatted;
 };
 
