@@ -23,7 +23,11 @@ const s3 = new S3Client({
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_UNEXPECTED_FILE") {
-      return res.status(400).json({ error: "Unexpected field name. Use 'file' for single file or 'files' for multiple files." });
+      // Log the incoming field names for debugging
+      console.log("Received field names:", Object.keys(req.files || {}));
+      return res.status(400).json({ 
+        error: "Unexpected field name. Use 'file' for single file or 'files' for multiple files."
+      });
     }
     return res.status(400).json({ error: err.message });
   }
@@ -36,6 +40,8 @@ router.post("/upload", upload.fields([
   { name: "files", maxCount: 10 }
 ]), handleMulterError, async (req, res) => {
   try {
+    // Log received files for debugging
+    console.log("Received files:", req.files);
     const files = req.files["files"] || (req.files["file"] ? [req.files["file"][0]] : []);
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
 
