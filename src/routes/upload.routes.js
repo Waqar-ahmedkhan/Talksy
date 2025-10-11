@@ -35,7 +35,7 @@ const handleMulterError = (err, req, res, next) => {
 };
 
 // Single file upload endpoint (expects field name 'file')
-router.post("/upload", upload.single("file"), handleMulterError, async (req, res) => {
+router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   try {
     // Log received file for debugging
     console.log("Received file:", req.file);
@@ -93,7 +93,7 @@ router.post("/upload", upload.single("file"), handleMulterError, async (req, res
 });
 
 // Multiple file upload endpoint (expects field name 'files')
-router.post("/upload-multiple", upload.array("files", 10), handleMulterError, async (req, res) => {
+router.post("/multiple", upload.array("files", 10), handleMulterError, async (req, res) => {
   try {
     // Log received files for debugging
     console.log("Received files:", req.files);
