@@ -49,8 +49,7 @@ const handleMulterError = (err, req, res, next) => {
 router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   try {
     console.log("Received file:", req.file); // Log full file object
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
     const allowedTypes = [
       "image/jpeg",
@@ -68,27 +67,29 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/plain"
+      "text/plain",
+      "application/octet-stream" // Added to support generic binary types
     ];
 
-    if (!allowedTypes.includes(file.mimetype)) {
+    if (!allowedTypes.includes(req.file.mimetype)) {
       console.log("Unsupported MIME type debug:", {
-        filename: file.originalname,
-        mimetype: file.mimetype,
-        path: file.path
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        path: req.file.path,
+        headers: req.headers // Log request headers for debugging
       });
-      return res.status(400).json({ error: `Unsupported file type: ${file.mimetype}` });
+      return res.status(400).json({ error: `Unsupported file type: ${req.file.mimetype}` });
     }
 
     const uploadParams = {
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: `chat-files/${Date.now()}-${file.originalname}`,
-      Body: fs.createReadStream(file.path),
-      ContentType: file.mimetype,
+      Key: `chat-files/${Date.now()}-${req.file.originalname}`,
+      Body: fs.createReadStream(req.file.path),
+      ContentType: req.file.mimetype,
     };
     await s3.send(new PutObjectCommand(uploadParams));
     const fileUrl = `https://${process.env.S3_BUCKET_NAME}.s3.amazonaws.com/${uploadParams.Key}`;
-    res.json({ url: fileUrl, fileType: file.mimetype });
+    res.json({ url: fileUrl, fileType: req.file.mimetype });
 
   } catch (err) {
     console.error("Upload error:", err);
@@ -129,7 +130,8 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/plain"
+      "text/plain",
+      "application/octet-stream" // Added to support generic binary types
     ];
 
     const uploadedFiles = [];
@@ -139,7 +141,8 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
         console.log("Unsupported MIME type debug:", {
           filename: file.originalname,
           mimetype: file.mimetype,
-          path: file.path
+          path: file.path,
+          headers: req.headers // Log request headers for debugging
         });
         return res.status(400).json({ error: `Unsupported file type: ${file.mimetype}` });
       }
