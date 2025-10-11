@@ -13,10 +13,10 @@ const upload = multer({
 });
 
 const s3 = new S3Client({
-  region: process.env.AWS_REGION, // Use environment variable
+  region: process.env.AWS_REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID, // Use environment variable
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, // Use environment variable
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
@@ -30,7 +30,7 @@ const handleMulterError = (err, req, res, next) => {
       headers: req.headers,
       path: req.path
     });
-    if (err.code === "LIMIT_UNEXPECTED_FIELD") {
+    if (err.code === "LIMIT_UNEXPECTED_FIELD" || err.code === "LIMIT_UNEXPECTED_FILE") {
       return res.status(400).json({ 
         error: "Unexpected field name. Use 'file' for /api/upload or 'files' for /api/upload/multiple.",
         receivedFields: Object.keys(req.files || {})
@@ -48,7 +48,7 @@ const handleMulterError = (err, req, res, next) => {
 // Single file upload endpoint (expects field name 'file')
 router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   try {
-    console.log("Received file:", req.file);
+    console.log("Received file:", req.file); // Log full file object
     const file = req.file;
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
@@ -72,11 +72,16 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
+      console.log("Unsupported MIME type debug:", {
+        filename: file.originalname,
+        mimetype: file.mimetype,
+        path: file.path
+      });
       return res.status(400).json({ error: `Unsupported file type: ${file.mimetype}` });
     }
 
     const uploadParams = {
-      Bucket: process.env.S3_BUCKET_NAME, // Use environment variable
+      Bucket: process.env.S3_BUCKET_NAME,
       Key: `chat-files/${Date.now()}-${file.originalname}`,
       Body: fs.createReadStream(file.path),
       ContentType: file.mimetype,
@@ -104,7 +109,7 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
 // Multiple file upload endpoint (expects field name 'files')
 router.post("/multiple", upload.array("files", 10), handleMulterError, async (req, res) => {
   try {
-    console.log("Received files:", req.files);
+    console.log("Received files:", req.files); // Log full file array
     const files = req.files;
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
 
@@ -131,11 +136,16 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
 
     for (const file of files) {
       if (!allowedTypes.includes(file.mimetype)) {
+        console.log("Unsupported MIME type debug:", {
+          filename: file.originalname,
+          mimetype: file.mimetype,
+          path: file.path
+        });
         return res.status(400).json({ error: `Unsupported file type: ${file.mimetype}` });
       }
 
       const uploadParams = {
-        Bucket: process.env.S3_BUCKET_NAME, // Use environment variable
+        Bucket: process.env.S3_BUCKET_NAME,
         Key: `chat-files/${Date.now()}-${file.originalname}`,
         Body: fs.createReadStream(file.path),
         ContentType: file.mimetype,
@@ -169,7 +179,7 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
 router.post("/debug", upload.any(), async (req, res) => {
   try {
     console.log("Debug endpoint - Received files:", req.files);
-    res.json({ receivedFields: req.files.map(file => ({ fieldname: file.fieldname, originalname: file.originalname })) });
+    res.json({ receivedFields: req.files.map(file => ({ fieldname: file.fieldname, originalname: file.originalname, mimetype: file.mimetype })) });
   } catch (err) {
     console.error("Debug endpoint error:", err);
     res.status(500).json({ error: "Failed to process debug request" });
