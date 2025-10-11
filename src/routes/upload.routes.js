@@ -22,11 +22,11 @@ const s3 = new S3Client({
 // Middleware to handle Multer errors
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+    if (err.code === "LIMIT_UNEXPECTED_FIELD") {
       // Log incoming field names for debugging
       console.log("Received field names:", Object.keys(req.files || {}));
       return res.status(400).json({ 
-        error: "Unexpected field name. Use 'file' for /upload or 'files' for /upload-multiple."
+        error: "Unexpected field name. Use 'file' for /api/upload or 'files' for /api/upload/multiple."
       });
     }
     return res.status(400).json({ error: err.message });
