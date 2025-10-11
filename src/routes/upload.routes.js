@@ -71,15 +71,15 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
       "application/octet-stream" // Added to support generic binary types
     ];
 
-    if (!allowedTypes.includes(req.file.mimetype)) {
-      console.log("Unsupported MIME type debug:", {
-        filename: req.file.originalname,
-        mimetype: req.file.mimetype,
-        path: req.file.path,
-        headers: req.headers // Log request headers for debugging
-      });
-      return res.status(400).json({ error: `Unsupported file type: ${req.file.mimetype}` });
-    }
+    // if (!allowedTypes.includes(req.file.mimetype)) {
+    //   console.log("Unsupported MIME type debug:", {
+    //     filename: req.file.originalname,
+    //     mimetype: req.file.mimetype,
+    //     path: req.file.path,
+    //     headers: req.headers // Log request headers for debugging
+    //   });
+    //   return res.status(400).json({ error: `Unsupported file type: ${req.file.mimetype}` });
+    // }
 
     const uploadParams = {
       Bucket: process.env.S3_BUCKET_NAME,
