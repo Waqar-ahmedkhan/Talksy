@@ -1,10 +1,11 @@
 import express from "express";
 import multer from "multer";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import fs from "fs"; // Import fs module for ESM
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import fs from "fs";
 
 const router = express.Router();
-const upload = multer({ 
+const upload = multer({
   dest: "uploads/",
   limits: {
     fileSize: 100 * 1024 * 1024, // 100MB limit
@@ -19,6 +20,27 @@ const s3 = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
+
+// Allowed file types
+const allowedTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/tiff",
+  "application/pdf",
+  "video/mp4",
+  "video/mpeg",
+  "video/quicktime",
+  "video/webm",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "application/octet-stream"
+];
 
 // Middleware to handle Multer errors
 const handleMulterError = (err, req, res, next) => {
@@ -45,51 +67,42 @@ const handleMulterError = (err, req, res, next) => {
   next(err);
 };
 
+// Helper to generate presigned URL
+const generatePresignedUrl = async (key) => {
+  const command = new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: key
+  });
+  return await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hour
+};
+
 // Single file upload endpoint (expects field name 'file')
 router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   try {
-    console.log("Received file:", req.file); // Log full file object
+    console.log("Received file:", req.file);
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "image/bmp",
-      "image/tiff",
-      "application/pdf",
-      "video/mp4",
-      "video/mpeg",
-      "video/quicktime",
-      "video/webm",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/plain",
-      "application/octet-stream" // Added to support generic binary types
-    ];
+    if (!allowedTypes.includes(req.file.mimetype)) {
+      console.log("Unsupported MIME type debug:", {
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        path: req.file.path,
+        headers: req.headers
+      });
+      return res.status(400).json({ error: `Unsupported file type: ${req.file.mimetype}` });
+    }
 
-    // if (!allowedTypes.includes(req.file.mimetype)) {
-    //   console.log("Unsupported MIME type debug:", {
-    //     filename: req.file.originalname,
-    //     mimetype: req.file.mimetype,
-    //     path: req.file.path,
-    //     headers: req.headers // Log request headers for debugging
-    //   });
-    //   return res.status(400).json({ error: `Unsupported file type: ${req.file.mimetype}` });
-    // }
-
+    const key = `chat-files/${Date.now()}-${req.file.originalname}`;
     const uploadParams = {
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: `chat-files/${Date.now()}-${req.file.originalname}`,
+      Key: key,
       Body: fs.createReadStream(req.file.path),
       ContentType: req.file.mimetype,
     };
+
     await s3.send(new PutObjectCommand(uploadParams));
-    const fileUrl = `https://${process.env.S3_BUCKET_NAME}.s3.amazonaws.com/${uploadParams.Key}`;
-    res.json({ url: fileUrl, fileType: req.file.mimetype });
+    const url = await generatePresignedUrl(key);
+    res.json({ url, fileType: req.file.mimetype });
 
   } catch (err) {
     console.error("Upload error:", err);
@@ -97,11 +110,9 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   } finally {
     if (req.file) {
       try {
-        await fs.promises.unlink(req.file.path).catch(err => 
-          console.error(`Failed to delete temp file ${req.file.path}:`, err)
-        );
+        await fs.promises.unlink(req.file.path);
       } catch (cleanupErr) {
-        console.error("Cleanup error:", cleanupErr);
+        console.error(`Failed to delete temp file ${req.file.path}:`, cleanupErr);
       }
     }
   }
@@ -110,29 +121,9 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
 // Multiple file upload endpoint (expects field name 'files')
 router.post("/multiple", upload.array("files", 10), handleMulterError, async (req, res) => {
   try {
-    console.log("Received files:", req.files); // Log full file array
+    console.log("Received files:", req.files);
     const files = req.files;
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
-
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "image/bmp",
-      "image/tiff",
-      "application/pdf",
-      "video/mp4",
-      "video/mpeg",
-      "video/quicktime",
-      "video/webm",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/plain",
-      "application/octet-stream" // Added to support generic binary types
-    ];
 
     const uploadedFiles = [];
 
@@ -142,20 +133,22 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
           filename: file.originalname,
           mimetype: file.mimetype,
           path: file.path,
-          headers: req.headers // Log request headers for debugging
+          headers: req.headers
         });
         return res.status(400).json({ error: `Unsupported file type: ${file.mimetype}` });
       }
 
+      const key = `chat-files/${Date.now()}-${file.originalname}`;
       const uploadParams = {
         Bucket: process.env.S3_BUCKET_NAME,
-        Key: `chat-files/${Date.now()}-${file.originalname}`,
+        Key: key,
         Body: fs.createReadStream(file.path),
         ContentType: file.mimetype,
       };
+
       await s3.send(new PutObjectCommand(uploadParams));
-      const fileUrl = `https://${process.env.S3_BUCKET_NAME}.s3.amazonaws.com/${uploadParams.Key}`;
-      uploadedFiles.push({ url: fileUrl, fileType: file.mimetype });
+      const url = await generatePresignedUrl(key);
+      uploadedFiles.push({ url, fileType: file.mimetype });
     }
 
     res.json({ urls: uploadedFiles });
@@ -182,7 +175,13 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
 router.post("/debug", upload.any(), async (req, res) => {
   try {
     console.log("Debug endpoint - Received files:", req.files);
-    res.json({ receivedFields: req.files.map(file => ({ fieldname: file.fieldname, originalname: file.originalname, mimetype: file.mimetype })) });
+    res.json({ 
+      receivedFields: req.files.map(file => ({ 
+        fieldname: file.fieldname, 
+        originalname: file.originalname, 
+        mimetype: file.mimetype 
+      })) 
+    });
   } catch (err) {
     console.error("Debug endpoint error:", err);
     res.status(500).json({ error: "Failed to process debug request" });
