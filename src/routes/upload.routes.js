@@ -3,7 +3,6 @@ import multer from "multer";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
-import ffmpeg from "fluent-ffmpeg";
 
 const router = express.Router();
 const upload = multer({
@@ -22,7 +21,7 @@ const s3 = new S3Client({
   },
 });
 
-// Allowed file types, explicitly including video types and octet-stream
+// Allowed file types, including common non-video types and octet-stream
 const allowedTypes = [
   "image/jpeg",
   "image/png",
@@ -31,33 +30,13 @@ const allowedTypes = [
   "image/bmp",
   "image/tiff",
   "application/pdf",
-  "video/mp4",
-  "video/mpeg",
-  "video/quicktime",
-  "video/webm",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/plain",
-  "application/octet-stream" // Fallback for generic binary files
+  "application/octet-stream" // Fallback for generic files, including videos
 ];
-
-// Helper to check video duration using ffprobe
-const checkVideoDuration = (filePath) => {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err) {
-        return reject(new Error("Failed to probe video file"));
-      }
-      const duration = metadata.format.duration; // Duration in seconds
-      if (duration > 300) { // 5 minutes = 300 seconds
-        return reject(new Error("Video duration exceeds 5 minutes"));
-      }
-      resolve();
-    });
-  });
-};
 
 // Middleware to handle Multer errors
 const handleMulterError = (err, req, res, next) => {
@@ -99,27 +78,15 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
     console.log("Received file:", req.file);
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    if (!allowedTypes.includes(req.file.mimetype)) {
+    // Allow any video/* MIME type or octet-stream, in addition to other allowed types
+    if (!req.file.mimetype.startsWith("video/") && !allowedTypes.includes(req.file.mimetype)) {
       console.log("Unsupported MIME type debug:", {
         filename: req.file.originalname,
         mimetype: req.file.mimetype,
         path: req.file.path,
         headers: req.headers
       });
-      return res.status(400).json({ error: `Invalid video MIME type or unsupported file type: ${req.file.mimetype}` });
-    }
-
-    // Check video duration if file is a video
-    if (req.file.mimetype.startsWith("video/")) {
-      try {
-        await checkVideoDuration(req.file.path);
-      } catch (err) {
-        console.log("Video duration error:", {
-          filename: req.file.originalname,
-          error: err.message
-        });
-        return res.status(400).json({ error: `Invalid video MIME type or duration (max 5 minutes): ${err.message}` });
-      }
+      return res.status(400).json({ error: `Unsupported file type: ${req.file.mimetype}` });
     }
 
     const key = `chat-files/${Date.now()}-${req.file.originalname}`;
@@ -163,27 +130,15 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
     const uploadedFiles = [];
 
     for (const file of files) {
-      if (!allowedTypes.includes(file.mimetype)) {
+      // Allow any video/* MIME type or octet-stream, in addition to other allowed types
+      if (!file.mimetype.startsWith("video/") && !allowedTypes.includes(file.mimetype)) {
         console.log("Unsupported MIME type debug:", {
           filename: file.originalname,
           mimetype: file.mimetype,
           path: file.path,
           headers: req.headers
         });
-        return res.status(400).json({ error: `Invalid video MIME type or unsupported file type: ${file.mimetype}` });
-      }
-
-      // Check video duration if file is a video
-      if (file.mimetype.startsWith("video/")) {
-        try {
-          await checkVideoDuration(file.path);
-        } catch (err) {
-          console.log("Video duration error:", {
-            filename: file.originalname,
-            error: err.message
-          });
-          return res.status(400).json({ error: `Invalid video MIME type or duration (max 5 minutes): ${err.message}` });
-        }
+        return res.status(400).json({ error: `Unsupported file type: ${file.mimetype}` });
       }
 
       const key = `chat-files/${Date.now()}-${file.originalname}`;
@@ -228,24 +183,13 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
 router.post("/debug", upload.any(), async (req, res) => {
   try {
     console.log("Debug endpoint - Received files:", req.files);
-    const fileDetails = await Promise.all(req.files.map(async file => {
-      let duration = null;
-      if (file.mimetype.startsWith("video/")) {
-        try {
-          await checkVideoDuration(file.path);
-          duration = "Valid (≤ 5 minutes)";
-        } catch (err) {
-          duration = `Invalid: ${err.message}`;
-        }
-      }
-      return {
-        fieldname: file.fieldname,
-        originalname: file.originalname,
-        mimetype: file.mimetype,
-        duration: duration
-      };
-    }));
-    res.json({ receivedFields: fileDetails });
+    res.json({ 
+      receivedFields: req.files.map(file => ({ 
+        fieldname: file.fieldname, 
+        originalname: file.originalname, 
+        mimetype: file.mimetype 
+      })) 
+    });
   } catch (err) {
     console.error("Debug endpoint error:", err);
     res.status(500).json({ error: "Failed to process debug request" });
