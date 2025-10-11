@@ -19,9 +19,24 @@ const s3 = new S3Client({
   },
 });
 
-router.post("/upload", upload.array("files", 10), async (req, res) => {
+// Middleware to handle Multer errors
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({ error: "Unexpected field name. Use 'file' for single file or 'files' for multiple files." });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
+};
+
+// Route for file uploads (supports both 'file' for single and 'files' for multiple uploads)
+router.post("/upload", upload.fields([
+  { name: "file", maxCount: 1 },
+  { name: "files", maxCount: 10 }
+]), handleMulterError, async (req, res) => {
   try {
-    const files = req.files;
+    const files = req.files["files"] || (req.files["file"] ? [req.files["file"][0]] : []);
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
 
     const allowedTypes = [
@@ -29,6 +44,8 @@ router.post("/upload", upload.array("files", 10), async (req, res) => {
       "image/png",
       "image/gif",
       "image/webp",
+      "image/bmp",
+      "image/tiff",
       "application/pdf",
       "video/mp4",
       "video/mpeg",
@@ -68,8 +85,9 @@ router.post("/upload", upload.array("files", 10), async (req, res) => {
     if (req.files) {
       const fs = require("fs").promises;
       try {
+        const allFiles = [...(req.files["file"] || []), ...(req.files["files"] || [])];
         await Promise.all(
-          req.files.map(file => fs.unlink(file.path).catch(err => 
+          allFiles.map(file => fs.unlink(file.path).catch(err => 
             console.error(`Failed to delete temp file ${file.path}:`, err)
           ))
         );
