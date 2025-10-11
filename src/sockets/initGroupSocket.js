@@ -805,9 +805,10 @@ socket.on("send_text_message", async (data, callback) => {
       });
     }
     senderId = new mongoose.Types.ObjectId(senderId);
+    console.log(`[SEND_TEXT_MESSAGE] Casted senderId: ${senderId.toString()}`);
 
     // Step 3: Check if User exists
-    const user = await User.findById(senderId).select("displayName phone");
+    let user = await User.findById(senderId).select("displayName phone");
     if (!user) {
       console.error(
         `[SEND_TEXT_MESSAGE_ERROR] User not found in database: senderId=${senderId}, socketId=${socket.id}`
@@ -865,7 +866,20 @@ socket.on("send_text_message", async (data, callback) => {
       });
     }
 
-    // Step 7: Create and save Chat document
+    // Step 7: Re-verify user existence before saving chat
+    user = await User.findById(senderId).select("_id"); // Minimal query to confirm existence
+    if (!user) {
+      console.error(
+        `[SEND_TEXT_MESSAGE_ERROR] User disappeared before saving chat: senderId=${senderId}, socketId=${socket.id}`
+      );
+      return callback({
+        success: false,
+        message: "User no longer exists in database",
+      });
+    }
+    console.log(`[SEND_TEXT_MESSAGE] Re-verified user exists: senderId=${senderId}`);
+
+    // Step 8: Create and save Chat document
     const chat = new Chat({
       senderId,
       groupId: castGroupId,
@@ -884,7 +898,7 @@ socket.on("send_text_message", async (data, callback) => {
       )}`
     );
 
-    // Step 8: Populate senderId
+    // Step 9: Populate senderId with minimal fields
     await chat.populate("senderId", "displayName");
     if (!chat.senderId || !chat.senderId._id) {
       console.error(
@@ -900,14 +914,14 @@ socket.on("send_text_message", async (data, callback) => {
       `[SEND_TEXT_MESSAGE] Populated successfully: messageId=${chat._id}, sender displayName=${chat.senderId.displayName}`
     );
 
-    // Step 9: Emit message to group room
+    // Step 10: Emit message to group room
     const groupRoom = `group_${castGroupId}`;
     io.to(groupRoom).emit("new_text_message", { message: chat });
     console.log(
       `[SEND_TEXT_MESSAGE] Emitted new_text_message to groupRoom=${groupRoom}`
     );
 
-    // Step 10: Update message status to delivered
+    // Step 11: Update message status to delivered
     setTimeout(async () => {
       const updatedChat = await Chat.findByIdAndUpdate(
         chat._id,
@@ -929,7 +943,7 @@ socket.on("send_text_message", async (data, callback) => {
       }
     }, 100);
 
-    // Step 11: Send success response
+    // Step 12: Send success response
     callback({ success: true, message: chat });
     console.log(
       `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}`
