@@ -26,7 +26,7 @@ const handleMulterError = (err, req, res, next) => {
       // Log incoming field names for debugging
       console.log("Received field names:", Object.keys(req.files || {}));
       return res.status(400).json({ 
-        error: "Unexpected field name. Use 'file' for /api/upload or 'files' for /api/upload-multiple."
+        error: "Unexpected field name. Use 'file' for /upload or 'files' for /upload-multiple."
       });
     }
     return res.status(400).json({ error: err.message });

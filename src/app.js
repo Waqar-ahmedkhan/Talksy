@@ -16,16 +16,15 @@ dotenv.config();
 const app = express();
 
 // Middleware
-// Note: Avoid parsing multipart/form-data with express.json() or express.urlencoded()
-// Only apply these for non-multipart routes
+// Log request details for debugging upload issues
 app.use((req, res, next) => {
-  // Log request details for debugging
   if (req.path.startsWith("/api/upload")) {
-    console.log(`Upload request: ${req.method} ${req.path} ${JSON.stringify(req.headers)}`);
+    console.log(`Upload request: ${req.method} ${req.path} Headers: ${JSON.stringify(req.headers)}`);
   }
   next();
 });
 
+// For production, restrict the origin (e.g., ["https://your-frontend.com"])
 app.use(cors({ origin: "*" }));
 
 // Apply JSON and URL-encoded parsing only for non-multipart routes
@@ -65,7 +64,7 @@ app.use((err, req, res, next) => {
     console.log("Global Multer error:", err, "Field names:", Object.keys(req.files || {}));
     if (err.code === "LIMIT_UNEXPECTED_FILE") {
       return res.status(400).json({
-        error: "Unexpected field name. Use 'file' for /api/upload or 'files' for /api/upload-multiple.",
+        error: "Unexpected field name. Use 'file' for /api/upload or 'files' for /api/upload/multiple.",
       });
     }
     return res.status(400).json({ error: err.message });
