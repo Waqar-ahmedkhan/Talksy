@@ -1,3 +1,4 @@
+
 import express from "express";
 import multer from "multer";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -22,14 +23,14 @@ const s3 = new S3Client({
 // Middleware to handle Multer errors
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
+    // Log all Multer errors for debugging
+    console.log("Multer error:", err.code, err.message, "Field names:", Object.keys(req.files || {}));
     if (err.code === "LIMIT_UNEXPECTED_FIELD") {
-      // Log incoming field names for debugging
-      console.log("Received field names:", Object.keys(req.files || {}));
       return res.status(400).json({ 
         error: "Unexpected field name. Use 'file' for /api/upload or 'files' for /api/upload/multiple."
       });
     }
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: `Multer error: ${err.message}` });
   }
   next(err);
 };
@@ -148,13 +149,24 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
       try {
         await Promise.all(
           req.files.map(file => fs.unlink(file.path).catch(err => 
-            console.error(`Failed to delete temp file ${file.path}:`, err)
+            console.error(`Failed to delete temp file ${req.file.path}:`, err)
           ))
         );
       } catch (cleanupErr) {
         console.error("Cleanup error:", cleanupErr);
       }
     }
+  }
+});
+
+// Temporary debugging endpoint to capture any field name
+router.post("/debug", upload.any(), async (req, res) => {
+  try {
+    console.log("Debug endpoint - Received files:", req.files);
+    res.json({ receivedFields: req.files.map(file => ({ fieldname: file.fieldname, originalname: file.originalname })) });
+  } catch (err) {
+    console.error("Debug endpoint error:", err);
+    res.status(500).json({ error: "Failed to process debug request" });
   }
 });
 
