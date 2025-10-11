@@ -111,12 +111,10 @@ export const createProfile = async (req, res) => {
     console.log(`createProfile: Request body: ${JSON.stringify(req.body)}`);
     if (!req.body || typeof req.body !== "object") {
       console.error("createProfile: Missing or invalid request body");
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: "Request body is missing or invalid JSON",
-        });
+      return res.status(400).json({
+        success: false,
+        error: "Request body is missing or invalid JSON",
+      });
     }
 
     const {
@@ -392,12 +390,10 @@ export const getProfilesFromContacts = async (req, res) => {
               contact
             )}`
           );
-          return res
-            .status(400)
-            .json({
-              success: false,
-              error: "Each contact must have a valid phone number",
-            });
+          return res.status(400).json({
+            success: false,
+            error: "Each contact must have a valid phone number",
+          });
         }
         phoneNumbers.push(contact.phone);
         contactMap.set(contact.phone, contact.customName || null);
@@ -602,105 +598,105 @@ const normalizePhoneNumber = (phone) => {
  * Get Chat List
  */
 
-export const getChatList = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+// export const getChatList = async (req, res) => {
+//   try {
+//     const userId = req.user._id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 20;
+//     const skip = (page - 1) * limit;
 
-    const myProfile = await User.findById(userId).lean();
-    if (!myProfile) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
+//     const myProfile = await User.findById(userId).lean();
+//     if (!myProfile) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "User not found" });
+//     }
 
-    const chats = await Chat.find({
-      $or: [{ senderId: userId }, { receiverId: userId }],
-    })
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate("senderId receiverId")
-      .lean();
+//     const chats = await Chat.find({
+//       $or: [{ senderId: userId }, { receiverId: userId }],
+//     })
+//       .sort({ updatedAt: -1 })
+//       .skip(skip)
+//       .limit(limit)
+//       .populate("senderId receiverId")
+//       .lean();
 
-    // get user contacts to map custom names
-    const contacts = await Contact.find({ ownerId: userId }).lean();
-    const contactMap = new Map();
+//     // get user contacts to map custom names
+//     const contacts = await Contact.find({ ownerId: userId }).lean();
+//     const contactMap = new Map();
 
-    contacts.forEach((c) => {
-      const phone = normalizePhoneNumber(c.contactPhone);
-      if (phone) contactMap.set(phone, c.customName);
-    });
+//     contacts.forEach((c) => {
+//       const phone = normalizePhoneNumber(c.contactPhone);
+//       if (phone) contactMap.set(phone, c.customName);
+//     });
 
-    // get all users' online status
-    const allUsers = await User.find(
-      {},
-      { phone: 1, online: 1, lastSeen: 1 }
-    ).lean();
-    const userMap = new Map();
-    allUsers.forEach((u) => {
-      const phone = normalizePhoneNumber(u.phone);
-      if (phone) userMap.set(phone, { online: u.online, lastSeen: u.lastSeen });
-    });
+//     // get all users' online status
+//     const allUsers = await User.find(
+//       {},
+//       { phone: 1, online: 1, lastSeen: 1 }
+//     ).lean();
+//     const userMap = new Map();
+//     allUsers.forEach((u) => {
+//       const phone = normalizePhoneNumber(u.phone);
+//       if (phone) userMap.set(phone, { online: u.online, lastSeen: u.lastSeen });
+//     });
 
-    const chatMap = new Map();
+//     const chatMap = new Map();
 
-    for (const chat of chats) {
-      if (!chat.senderId || !chat.receiverId) continue;
+//     for (const chat of chats) {
+//       if (!chat.senderId || !chat.receiverId) continue;
 
-      const isSender =
-        chat.senderId._id.toString() === myProfile._id.toString();
-      const otherProfile = isSender ? chat.receiverId : chat.senderId;
-      const otherPhone = normalizePhoneNumber(otherProfile.phone);
+//       const isSender =
+//         chat.senderId._id.toString() === myProfile._id.toString();
+//       const otherProfile = isSender ? chat.receiverId : chat.senderId;
+//       const otherPhone = normalizePhoneNumber(otherProfile.phone);
 
-      // 1️⃣ pick custom name if available
-      const customName = contactMap.get(otherPhone) || null;
+//       // 1️⃣ pick custom name if available
+//       const customName = contactMap.get(otherPhone) || null;
 
-      // 2️⃣ logic: if no customName -> show phone (if visible) -> else show displayName
-      let displayName;
-      if (customName) {
-        displayName = customName;
-      } else if (otherProfile.isNumberVisible !== false) {
-        displayName = otherProfile.phone;
-      } else {
-        displayName = otherProfile.displayName || "Unknown";
-      }
+//       // 2️⃣ logic: if no customName -> show phone (if visible) -> else show displayName
+//       let displayName;
+//       if (customName) {
+//         displayName = customName;
+//       } else if (otherProfile.isNumberVisible !== false) {
+//         displayName = otherProfile.phone;
+//       } else {
+//         displayName = otherProfile.displayName || "Unknown";
+//       }
 
-      const userStatus = userMap.get(otherPhone) || {};
+//       const userStatus = userMap.get(otherPhone) || {};
 
-      if (!chatMap.has(otherProfile._id.toString())) {
-        chatMap.set(otherProfile._id.toString(), {
-          id: otherProfile._id,
-          phone: otherProfile.phone,
-          displayName,
-          customName: customName || null,
-          randomNumber: otherProfile.randomNumber || "",
-          avatarUrl: otherProfile.avatarUrl || "",
-          online: userStatus.online || false,
-          lastSeen: userStatus.lastSeen || null,
-          latestMessage: formatChat(chat),
-        });
-      }
-    }
+//       if (!chatMap.has(otherProfile._id.toString())) {
+//         chatMap.set(otherProfile._id.toString(), {
+//           id: otherProfile._id,
+//           phone: otherProfile.phone,
+//           displayName,
+//           customName: customName || null,
+//           randomNumber: otherProfile.randomNumber || "",
+//           avatarUrl: otherProfile.avatarUrl || "",
+//           online: userStatus.online || false,
+//           lastSeen: userStatus.lastSeen || null,
+//           latestMessage: formatChat(chat),
+//         });
+//       }
+//     }
 
-    const chatList = Array.from(chatMap.values());
+//     const chatList = Array.from(chatMap.values());
 
-    return res.json({
-      success: true,
-      page,
-      limit,
-      total: chatList.length,
-      chats: chatList,
-    });
-  } catch (error) {
-    console.error("[getChatList Error]", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal Server Error" });
-  }
-};
+//     return res.json({
+//       success: true,
+//       page,
+//       limit,
+//       total: chatList.length,
+//       chats: chatList,
+//     });
+//   } catch (error) {
+//     console.error("[getChatList Error]", error);
+//     return res
+//       .status(500)
+//       .json({ success: false, message: "Internal Server Error" });
+//   }
+// };
 
 // const getChatList = async (req, res) => {
 //   const { userId, page = 1, limit = 100 } = req.query;
@@ -974,6 +970,116 @@ export const getChatList = async (req, res) => {
 /**
  * Upsert Contact
  */
+
+export const getChatList = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Fetch current user profile
+    const myProfile = await User.findById(userId).lean();
+    if (!myProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Fetch chat records
+    const chats = await Chat.find({
+      $or: [{ senderId: userId }, { receiverId: userId }],
+    })
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("senderId receiverId")
+      .lean();
+
+    // Get user contacts to map custom names
+    const contacts = await Contact.find({ ownerId: userId }).lean();
+    const contactMap = new Map();
+    contacts.forEach((c) => {
+      const phone = normalizePhoneNumber(c.contactPhone);
+      if (phone) contactMap.set(phone, c.customName);
+    });
+
+    // Fetch all users' online status
+    const allUsers = await User.find(
+      {},
+      { phone: 1, online: 1, lastSeen: 1 }
+    ).lean();
+    const userMap = new Map();
+    allUsers.forEach((u) => {
+      const phone = normalizePhoneNumber(u.phone);
+      if (phone) userMap.set(phone, { online: u.online, lastSeen: u.lastSeen });
+    });
+
+    const chatMap = new Map();
+
+    for (const chat of chats) {
+      if (!chat.senderId || !chat.receiverId) continue;
+
+      const isSender =
+        chat.senderId._id.toString() === myProfile._id.toString();
+      const otherProfile = isSender ? chat.receiverId : chat.senderId;
+      const otherPhone = normalizePhoneNumber(otherProfile.phone);
+
+      // 1️⃣ Pick custom name if available
+      const customName = contactMap.get(otherPhone) || null;
+
+      // 2️⃣ Logic for display name:
+      // If custom name → use it
+      // Else if phone visible → use phone
+      // Else → use displayName
+      let displayName;
+      if (customName) {
+        displayName = customName;
+      } else if (otherProfile.isNumberVisible) {
+        displayName = otherProfile.phone;
+      } else {
+        displayName = otherProfile.displayName || "Unknown";
+      }
+
+      // 3️⃣ Get user online status
+      const userStatus = userMap.get(otherPhone) || {};
+
+      // 4️⃣ Build chat entry if not already added
+      if (!chatMap.has(otherProfile._id.toString())) {
+        chatMap.set(otherProfile._id.toString(), {
+          id: otherProfile._id,
+          phone: otherProfile.phone,
+          displayName,
+          customName: customName || null,
+          randomNumber: otherProfile.randomNumber || "",
+          avatarUrl: otherProfile.avatarUrl || "",
+          online: userStatus.online || false,
+          lastSeen: userStatus.lastSeen || null,
+          latestMessage: formatChat(chat),
+        });
+      }
+    }
+
+    const chatList = Array.from(chatMap.values());
+
+    return res.json({
+      success: true,
+      page,
+      limit,
+      total: chatList.length,
+      chats: chatList,
+    });
+  } catch (err) {
+    console.error(`getChatList: Error: ${err.message}`);
+    return res.status(500).json({
+      success: false,
+      error: "Server error",
+      details: err.message,
+    });
+  }
+};
+
 export const upsertContact = async (req, res) => {
   try {
     console.log(
