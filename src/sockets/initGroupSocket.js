@@ -757,9 +757,7 @@ export const initGroupSocket = (server) => {
       }
     });
 
-
-
- socket.on("send_text_message", async (data, callback) => {
+socket.on("send_text_message", async (data, callback) => {
       console.log(
         `[SEND_TEXT_MESSAGE] Attempting to send message: socketId=${
           socket.id
