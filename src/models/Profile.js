@@ -5,8 +5,12 @@ const profileSchema = new mongoose.Schema({
   displayName: { type: String, required: true },
   randomNumber: { type: String, required: true },
   isVisible: { type: Boolean, default: false },
+  fcmToken: {
+    type: String,
+    default: "", // Store FCM token
+  },
   isNumberVisible: { type: Boolean, default: false },
-  avatarUrl: { type: String, default: "" },  // for controller compatibility
+  avatarUrl: { type: String, default: "" }, // for controller compatibility
   createdAt: { type: Date, default: Date.now },
 });
 
