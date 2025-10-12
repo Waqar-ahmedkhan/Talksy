@@ -14,7 +14,7 @@ const router = express.Router();
 
 // Protected routes
 
-router.post("/delete-user-chat", authenticateToken, deleteUserChat);
+router.post("/delete-chat", authenticateToken, deleteUserChat);
 router.post("/", authenticateToken, createProfile);
 router.get("/me", authenticateToken, getMyProfile);
 router.post("/contacts", authenticateToken, getProfilesFromContacts);
