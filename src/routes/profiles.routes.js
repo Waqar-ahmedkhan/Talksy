@@ -8,6 +8,7 @@ import {
   getProfileWithChat,
   getChatList, // Added
   deleteUserChat,
+  upsertContact,
 } from "../controllers/profiles.controller.js";
 
 const router = express.Router();
@@ -20,6 +21,7 @@ router.get("/me", authenticateToken, getMyProfile);
 router.post("/contacts", authenticateToken, getProfilesFromContacts);
 router.get("/with-chat/:phone", authenticateToken, getProfileWithChat);
 router.get("/chats", authenticateToken, getChatList);
+router.get('/contact', authenticatonToken, upsertContact)
 
 // Public routes
 router.get("/public", getPublicProfiles);
