@@ -1134,10 +1134,18 @@ export const deleteUserChat = async (req, res) => {
     const { targetPhone } = req.body;
     const userId = req.user._id;
     const myPhone = normalizePhoneNumber(req.user.phone);
+    const normalizedTargetPhone = normalizePhoneNumber(targetPhone);
 
     if (!targetPhone) {
       console.error('deleteUserChat: Target phone number is required');
       return res.status(400).json({ success: false, error: 'Target phone number is required' });
+    }
+
+    // Validate phone number format
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+    if (!phoneRegex.test(normalizedTargetPhone)) {
+      console.error(`deleteUserChat: Invalid phone number format: ${targetPhone}`);
+      return res.status(400).json({ success: false, error: 'Invalid phone number format' });
     }
 
     const myProfile = await Profile.findOne({ phone: myPhone });
@@ -1146,9 +1154,9 @@ export const deleteUserChat = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Your profile not found' });
     }
 
-    const targetProfile = await Profile.findOne({ phone: normalizePhoneNumber(targetPhone) });
+    const targetProfile = await Profile.findOne({ phone: normalizedTargetPhone });
     if (!targetProfile) {
-      console.error(`deleteUserChat: Profile not found for phone: ${targetPhone}`);
+      console.error(`deleteUserChat: Profile not found for phone: ${normalizedTargetPhone}`);
       return res.status(404).json({ success: false, error: 'Target profile not found' });
     }
 
@@ -1163,11 +1171,21 @@ export const deleteUserChat = async (req, res) => {
       },
       { $addToSet: { deletedFor: myProfile._id } }
     );
-    console.log(`deleteUserChat: Soft-deleted ${updateResult.modifiedCount} chats for user ${userId} with ${targetPhone}`);
+    console.log(`deleteUserChat: Soft-deleted ${updateResult.modifiedCount} chats for user ${userId} with ${normalizedTargetPhone}`);
+
+    if (updateResult.modifiedCount === 0) {
+      console.log(`deleteUserChat: No chats found to delete for user ${userId} with ${normalizedTargetPhone}`);
+      return res.json({
+        success: true,
+        message: 'No chats found to delete',
+        modifiedCount: 0,
+      });
+    }
 
     return res.json({
       success: true,
-      message: `Chats with ${targetPhone} soft-deleted successfully`,
+      message: 'Chats with target user soft-deleted successfully',
+      modifiedCount: updateResult.modifiedCount,
     });
   } catch (err) {
     console.error(`deleteUserChat: Error: ${err.message}`);
