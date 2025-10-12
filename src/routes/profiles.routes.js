@@ -21,7 +21,7 @@ router.get("/me", authenticateToken, getMyProfile);
 router.post("/contacts", authenticateToken, getProfilesFromContacts);
 router.get("/with-chat/:phone", authenticateToken, getProfileWithChat);
 router.get("/chats", authenticateToken, getChatList);
-router.get('/contact', authenticateToken, upsertContact)
+router.post('/contact', authenticateToken, upsertContact)
 
 // Public routes
 router.get("/public", getPublicProfiles);
