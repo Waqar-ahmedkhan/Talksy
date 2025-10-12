@@ -881,7 +881,7 @@ export const getChatList = async (req, res) => {
 
     console.log(`[getChatList] Fetching users: phones=${phoneNumbers.length}`);
     const users = await User.find({ phone: { $in: phoneNumbers } }).select(
-      "phone online lastSeen"
+      "phone online lastSeen fcmToken"
     );
     console.log(`[getChatList] Found ${users.length} users`);
     const userMap = new Map(
@@ -949,6 +949,7 @@ export const getChatList = async (req, res) => {
             avatarUrl: otherProfile.avatarUrl || "",
             online: userMap.get(otherPhone)?.online || false,
             lastSeen: userMap.get(otherPhone)?.lastSeen || null,
+            fcmToken: userMap.get(otherPhone)?.fcmToken || null,
           },
           latestMessage: chat,
           unreadCount:
