@@ -709,64 +709,89 @@ export const getProfileWithChat = async (req, res) => {
 /**
  * Upsert Contact (Set Custom Name)
  */
-export const upsertContact = async (req, res) => {
+export const upsertContacts = async (req, res) => {
   try {
     console.log(
-      `[upsertContact] Processing request: body=${JSON.stringify(
+      `[upsertContacts] Processing request: body=${JSON.stringify(
         req.body
       )}, userId=${req.user._id}`
     );
-    const { phone, customName } = req.body;
+    const contacts = req.body.contacts; // Expecting an array of { phone, customName }
     const userId = req.user._id;
 
-    if (!phone || typeof phone !== "string" || !phone.trim()) {
-      console.error(
-        "[upsertContact] Invalid phone number: must be a non-empty string"
-      );
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      console.error("[upsertContacts] Invalid input: contacts must be a non-empty array");
       return res
         .status(400)
-        .json({ success: false, error: "Valid phone number is required" });
+        .json({ success: false, error: "Contacts must be a non-empty array" });
     }
 
-    if (!customName || typeof customName !== "string" || !customName.trim()) {
-      console.error(
-        "[upsertContact] Invalid custom name: must be a non-empty string"
-      );
-      return res
-        .status(400)
-        .json({ success: false, error: "Valid custom name is required" });
-    }
-
-    const normalizedPhone = normalizePhoneNumber(phone);
     const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(normalizedPhone)) {
-      console.error(
-        `[upsertContact] Invalid phone number format: ${normalizedPhone}`
-      );
-      return res
-        .status(400)
-        .json({ success: false, error: "Invalid phone number format" });
+    const invalidContacts = [];
+    const validContacts = [];
+
+    // Validate all contacts
+    for (const contact of contacts) {
+      const { phone, customName } = contact;
+
+      if (!phone || typeof phone !== "string" || !phone.trim()) {
+        invalidContacts.push({ phone, error: "Valid phone number is required" });
+        continue;
+      }
+
+      if (!customName || typeof customName !== "string" || !customName.trim()) {
+        invalidContacts.push({ phone, error: "Valid custom name is required" });
+        continue;
+      }
+
+      const normalizedPhone = normalizePhoneNumber(phone);
+      if (!phoneRegex.test(normalizedPhone)) {
+        invalidContacts.push({ phone, error: "Invalid phone number format" });
+        continue;
+      }
+
+      validContacts.push({
+        phone: normalizedPhone,
+        customName: customName.trim(),
+      });
     }
 
-    const contact = await Contact.findOneAndUpdate(
-      { userId, phone: normalizedPhone },
-      { customName: customName.trim() },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+    if (invalidContacts.length > 0) {
+      console.error(
+        `[upsertContacts] Invalid contacts: ${JSON.stringify(invalidContacts)}`
+      );
+      return res.status(400).json({
+        success: false,
+        error: "Some contacts have invalid data",
+        invalidContacts,
+      });
+    }
+
+    // Process valid contacts in bulk
+    const updatePromises = validContacts.map(({ phone, customName }) =>
+      Contact.findOneAndUpdate(
+        { userId, phone },
+        { customName },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      )
     );
+
+    const updatedContacts = await Promise.all(updatePromises);
+
     console.log(
-      `[upsertContact] Contact saved: phone=${normalizedPhone}, customName=${contact.customName}, contactId=${contact._id}`
+      `[upsertContacts] Contacts saved: count=${updatedContacts.length}`
     );
 
     return res.json({
       success: true,
-      message: "Contact custom name saved successfully",
-      contact: {
+      message: "Contacts saved successfully",
+      contacts: updatedContacts.map((contact) => ({
         phone: contact.phone,
         customName: contact.customName,
-      },
+      })),
     });
   } catch (err) {
-    console.error(`[upsertContact] Error: ${err.message}`);
+    console.error(`[upsertContacts] Error: ${err.message}`);
     return res
       .status(500)
       .json({ success: false, error: "Server error", details: err.message });
