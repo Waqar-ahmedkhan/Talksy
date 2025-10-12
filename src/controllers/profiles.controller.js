@@ -74,7 +74,7 @@ const formatProfile = (profile, user, customName = null) => {
 
   // Combine both: e.g. "John Doe (+923001234567)"
   const displayName =
-    name && phone ? `${name} (${phone})` : name || phone || "Unknown";
+    name && phone ? `${name}` : name || phone || "Unknown";
 
   const formatted = {
     id: profile?._id || null,
@@ -1122,5 +1122,55 @@ export const upsertContact = async (req, res) => {
   } catch (err) {
     console.error(`upsertContact: Error: ${err.message}`);
     return res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+
+
+
+export const deleteUserChat = async (req, res) => {
+  try {
+    console.log(`deleteUserChat: Request body: ${JSON.stringify(req.body)}, userId: ${req.user._id}`);
+    const { targetPhone } = req.body;
+    const userId = req.user._id;
+    const myPhone = normalizePhoneNumber(req.user.phone);
+
+    if (!targetPhone) {
+      console.error('deleteUserChat: Target phone number is required');
+      return res.status(400).json({ success: false, error: 'Target phone number is required' });
+    }
+
+    const myProfile = await Profile.findOne({ phone: myPhone });
+    if (!myProfile) {
+      console.error(`deleteUserChat: Profile not found for phone: ${myPhone}`);
+      return res.status(404).json({ success: false, error: 'Your profile not found' });
+    }
+
+    const targetProfile = await Profile.findOne({ phone: normalizePhoneNumber(targetPhone) });
+    if (!targetProfile) {
+      console.error(`deleteUserChat: Profile not found for phone: ${targetPhone}`);
+      return res.status(404).json({ success: false, error: 'Target profile not found' });
+    }
+
+    // Soft-delete all chats between user and target
+    const updateResult = await Chat.updateMany(
+      {
+        $or: [
+          { senderId: myProfile._id, receiverId: targetProfile._id },
+          { senderId: targetProfile._id, receiverId: myProfile._id },
+        ],
+        deletedFor: { $ne: myProfile._id },
+      },
+      { $addToSet: { deletedFor: myProfile._id } }
+    );
+    console.log(`deleteUserChat: Soft-deleted ${updateResult.modifiedCount} chats for user ${userId} with ${targetPhone}`);
+
+    return res.json({
+      success: true,
+      message: `Chats with ${targetPhone} soft-deleted successfully`,
+    });
+  } catch (err) {
+    console.error(`deleteUserChat: Error: ${err.message}`);
+    return res.status(500).json({ success: false, error: 'Server error', details: err.message });
   }
 };
