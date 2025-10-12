@@ -21,7 +21,7 @@ const s3 = new S3Client({
   },
 });
 
-// Allowed file types, including common non-video types and octet-stream
+// Allowed file types, including common non-video/audio types and octet-stream
 const allowedTypes = [
   "image/jpeg",
   "image/png",
@@ -35,7 +35,13 @@ const allowedTypes = [
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/plain",
-  "application/octet-stream" // Fallback for generic files, including videos
+  "application/octet-stream", // Fallback for generic files, including videos
+  "audio/mp4", // For .m4a files
+  "audio/mpeg", // For .mp3 files
+  "audio/wav", // For .wav files
+  "audio/ogg", // For .ogg files
+  "audio/aac", // For .aac files
+  "audio/flac" // For .flac files
 ];
 
 // Middleware to handle Multer errors
@@ -75,11 +81,20 @@ const generatePresignedUrl = async (key) => {
 // Single file upload endpoint (expects field name 'file')
 router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   try {
-    console.log("Received file:", req.file);
+    console.log("Received file:", {
+      filename: req.file?.originalname,
+      mimetype: req.file?.mimetype,
+      size: req.file?.size,
+      path: req.file?.path
+    });
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    // Allow any video/* MIME type or octet-stream, in addition to other allowed types
-    if (!req.file.mimetype.startsWith("video/") && !allowedTypes.includes(req.file.mimetype)) {
+    // Allow any video/* or audio/* MIME type or allowedTypes
+    if (
+      !req.file.mimetype.startsWith("video/") &&
+      !req.file.mimetype.startsWith("audio/") &&
+      !allowedTypes.includes(req.file.mimetype)
+    ) {
       console.log("Unsupported MIME type debug:", {
         filename: req.file.originalname,
         mimetype: req.file.mimetype,
@@ -107,8 +122,13 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Upload error:", err);
-    res.status(500).json({ error: "Failed to upload file" });
+    console.error("Upload error:", {
+      message: err.message,
+      stack: err.stack,
+      filename: req.file?.originalname,
+      mimetype: req.file?.mimetype
+    });
+    res.status(500).json({ error: "Failed to upload file to S3." });
   } finally {
     if (req.file) {
       try {
@@ -123,15 +143,24 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
 // Multiple file upload endpoint (expects field name 'files')
 router.post("/multiple", upload.array("files", 10), handleMulterError, async (req, res) => {
   try {
-    console.log("Received files:", req.files);
+    console.log("Received files:", req.files?.map(file => ({
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      path: file.path
+    })));
     const files = req.files;
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
 
     const uploadedFiles = [];
 
     for (const file of files) {
-      // Allow any video/* MIME type or octet-stream, in addition to other allowed types
-      if (!file.mimetype.startsWith("video/") && !allowedTypes.includes(file.mimetype)) {
+      // Allow any video/* or audio/* MIME type or allowedTypes
+      if (
+        !file.mimetype.startsWith("video/") &&
+        !file.mimetype.startsWith("audio/") &&
+        !allowedTypes.includes(file.mimetype)
+      ) {
         console.log("Unsupported MIME type debug:", {
           filename: file.originalname,
           mimetype: file.mimetype,
@@ -162,8 +191,12 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
     res.json({ urls: uploadedFiles });
 
   } catch (err) {
-    console.error("Upload error:", err);
-    res.status(500).json({ error: "Failed to upload files" });
+    console.error("Upload error:", {
+      message: err.message,
+      stack: err.stack,
+      filenames: req.files?.map(file => file.originalname)
+    });
+    res.status(500).json({ error: "Failed to upload files to S3." });
   } finally {
     if (req.files) {
       try {
@@ -182,7 +215,12 @@ router.post("/multiple", upload.array("files", 10), handleMulterError, async (re
 // Debug endpoint to capture any field name
 router.post("/debug", upload.any(), async (req, res) => {
   try {
-    console.log("Debug endpoint - Received files:", req.files);
+    console.log("Debug endpoint - Received files:", req.files?.map(file => ({
+      fieldname: file.fieldname,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    })));
     res.json({ 
       receivedFields: req.files.map(file => ({ 
         fieldname: file.fieldname, 
