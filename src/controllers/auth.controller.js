@@ -68,7 +68,7 @@ export const verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
-    // Strict validation
+    // Strict validation for Pakistan phone numbers
     const phoneRegex = /^\+92[0-9]{10}$/;
     if (!phone || !phoneRegex.test(phone)) {
       return res.status(400).json({
@@ -105,6 +105,19 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
 
+    // ✅ CRITICAL FIX: Ensure User exists (create if first time)
+    let user = await User.findOne({ phone });
+    if (!user) {
+      user = new User({
+        phone,
+        // displayName will be set later in createProfile
+        online: false,
+        lastSeen: new Date(),
+      });
+      await user.save();
+      console.log(`[verifyOtp] ✅ New user created for phone: ${phone}`);
+    }
+
     // Remove OTP after successful verification
     await Otp.deleteOne({ phone });
 
@@ -128,6 +141,10 @@ export const verifyOtp = async (req, res) => {
     });
   } catch (err) {
     console.error("verifyOtp error:", err);
+    // Log detailed error for debugging
+    if (err.name === "ValidationError") {
+      console.error("Mongoose Validation Error:", err.errors);
+    }
     return res.status(500).json({ success: false, error: "Server error" });
   }
 };
