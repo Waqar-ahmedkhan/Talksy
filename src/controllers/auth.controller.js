@@ -68,7 +68,6 @@ export const verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
-    // Strict validation for Pakistan phone numbers
     const phoneRegex = /^\+92[0-9]{10}$/;
     if (!phone || !phoneRegex.test(phone)) {
       return res.status(400).json({
@@ -80,21 +79,17 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, error: "OTP is required" });
     }
 
-    // Check OTP record
     const record = await Otp.findOne({ phone });
     if (!record) {
       return res.status(404).json({ success: false, message: "No OTP found" });
     }
 
     const { otp: storedOtp, expiry } = record;
-
-    // Check expiry
     if (Date.now() > new Date(expiry).getTime()) {
       await Otp.deleteOne({ phone });
       return res.status(400).json({ success: false, message: "OTP expired" });
     }
 
-    // Validate OTP
     const env = process.env.NODE_ENV || "development";
     const isValidOtp =
       env === "development"
@@ -105,34 +100,21 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
 
-    // ✅ CRITICAL FIX: Ensure User exists (create if first time)
+    // ✅ THIS IS THE FIX: Create user if not exists
     let user = await User.findOne({ phone });
     if (!user) {
-      user = new User({
-        phone,
-        // displayName will be set later in createProfile
-        online: false,
-        lastSeen: new Date(),
-      });
+      user = new User({ phone }); // displayName is optional → safe
       await user.save();
-      console.log(`[verifyOtp] ✅ New user created for phone: ${phone}`);
     }
 
-    // Remove OTP after successful verification
     await Otp.deleteOne({ phone });
 
-    // Check JWT_SECRET
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET not defined!");
-      return res
-        .status(500)
-        .json({ success: false, error: "Server configuration error" });
+      return res.status(500).json({ success: false, error: "Server configuration error" });
     }
 
-    // Generate JWT token
-    const token = jwt.sign({ phone }, process.env.JWT_SECRET, {
-      expiresIn: "30d", // 30 days ~ 1 month
-    });
+    const token = jwt.sign({ phone }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
     return res.json({
       success: true,
@@ -140,10 +122,10 @@ export const verifyOtp = async (req, res) => {
       token,
     });
   } catch (err) {
-    console.error("verifyOtp error:", err);
-    // Log detailed error for debugging
+    console.error("🔥 verifyOtp error:", err);
+    // Log validation errors
     if (err.name === "ValidationError") {
-      console.error("Mongoose Validation Error:", err.errors);
+      console.error("Validation failed:", err.errors);
     }
     return res.status(500).json({ success: false, error: "Server error" });
   }
