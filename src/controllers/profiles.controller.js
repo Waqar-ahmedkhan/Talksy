@@ -236,12 +236,10 @@ export const createProfile = async (req, res) => {
     );
     if (!req.body || typeof req.body !== "object") {
       console.error("[createProfile] Missing or invalid request body");
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: "Request body is missing or invalid JSON",
-        });
+      return res.status(400).json({
+        success: false,
+        error: "Request body is missing or invalid JSON",
+      });
     }
 
     const {
@@ -265,6 +263,22 @@ export const createProfile = async (req, res) => {
         .status(400)
         .json({ success: false, error: "Display name is required" });
     }
+    if (fcmToken && typeof fcmToken !== "string") {
+      console.error("[createProfile] Invalid FCM token format");
+      return res
+        .status(400)
+        .json({ success: false, error: "FCM token must be a string" });
+    }
+    // Basic FCM token validation (example: non-empty and reasonable length)
+    if (
+      fcmToken &&
+      (fcmToken.trim().length < 50 || fcmToken.trim().length > 500)
+    ) {
+      console.error("[createProfile] Invalid FCM token length");
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid FCM token length" });
+    }
 
     let profile = await Profile.findOne({ phone });
     console.log(
@@ -278,7 +292,10 @@ export const createProfile = async (req, res) => {
       profile.isVisible = isVisible;
       profile.isNumberVisible = isNumberVisible;
       profile.avatarUrl = avatarUrl.trim();
-      profile.fcmToken = fcmToken.trim(); // Update FCM token
+      // Only update fcmToken if a valid one is provided
+      if (fcmToken.trim()) {
+        profile.fcmToken = fcmToken.trim();
+      }
       console.log(
         `[createProfile] Updating profile: phone=${phone}, fcmToken=${
           fcmToken ? "provided" : "empty"
@@ -292,7 +309,7 @@ export const createProfile = async (req, res) => {
         isVisible,
         isNumberVisible,
         avatarUrl: avatarUrl.trim(),
-        fcmToken: fcmToken.trim(), // Save FCM token
+        fcmToken: fcmToken.trim(),
       });
       console.log(
         `[createProfile] Creating new profile: phone=${phone}, fcmToken=${
@@ -313,12 +330,17 @@ export const createProfile = async (req, res) => {
         displayName: displayName.trim(),
         online: false,
         lastSeen: new Date(),
+        fcmToken: fcmToken.trim(), // Sync FCM token to User model
       });
       await user.save();
       console.log(
         `[createProfile] New user created: phone=${phone}, userId=${user._id}`
       );
     } else {
+      if (fcmToken.trim()) {
+        user.fcmToken = fcmToken.trim(); // Update User model if fcmToken is provided
+        await user.save();
+      }
       console.log(
         `[createProfile] User found: phone=${phone}, userId=${user._id}`
       );
@@ -555,12 +577,10 @@ export const getProfilesFromContacts = async (req, res) => {
               contact
             )}`
           );
-          return res
-            .status(400)
-            .json({
-              success: false,
-              error: "Each contact must have a valid phone number",
-            });
+          return res.status(400).json({
+            success: false,
+            error: "Each contact must have a valid phone number",
+          });
         }
         phoneNumbers.push(contact.phone);
         contactMap.set(
@@ -720,7 +740,9 @@ export const upsertContacts = async (req, res) => {
     const userId = req.user._id;
 
     if (!Array.isArray(contacts) || contacts.length === 0) {
-      console.error("[upsertContacts] Invalid input: contacts must be a non-empty array");
+      console.error(
+        "[upsertContacts] Invalid input: contacts must be a non-empty array"
+      );
       return res
         .status(400)
         .json({ success: false, error: "Contacts must be a non-empty array" });
@@ -735,7 +757,10 @@ export const upsertContacts = async (req, res) => {
       const { phone, customName } = contact;
 
       if (!phone || typeof phone !== "string" || !phone.trim()) {
-        invalidContacts.push({ phone, error: "Valid phone number is required" });
+        invalidContacts.push({
+          phone,
+          error: "Valid phone number is required",
+        });
         continue;
       }
 
@@ -815,12 +840,10 @@ export const getChatList = async (req, res) => {
 
     if (!userId || !myPhone) {
       console.error("[getChatList] Missing userId or phone");
-      return res
-        .status(401)
-        .json({
-          success: false,
-          error: "Unauthorized: Missing user ID or phone",
-        });
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized: Missing user ID or phone",
+      });
     }
 
     if (page < 1 || limit < 1 || limit > 100) {
