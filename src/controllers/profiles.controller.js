@@ -224,7 +224,9 @@ const formatChat = (chat) => {
 //   }
 // };
 
-
+/**
+ * Create or Update Profile
+ */
 export const createProfile = async (req, res) => {
   try {
     console.log(
@@ -245,7 +247,7 @@ export const createProfile = async (req, res) => {
       isVisible = false,
       isNumberVisible = false,
       avatarUrl = "",
-      fcmToken = null, // Default to null if not provided
+      fcmToken = "",
     } = req.body;
     const phone = req.user?.phone;
 
@@ -261,21 +263,21 @@ export const createProfile = async (req, res) => {
         .status(400)
         .json({ success: false, error: "Display name is required" });
     }
-    // Validate FCM token if provided
-    if (fcmToken !== null) {
-      if (typeof fcmToken !== "string") {
-        console.error("[createProfile] Invalid FCM token format");
-        return res
-          .status(400)
-          .json({ success: false, error: "FCM token must be a string" });
-      }
-      // Basic FCM token validation (example: non-empty and reasonable length)
-      if (fcmToken.trim().length < 50 || fcmToken.trim().length > 500) {
-        console.error("[createProfile] Invalid FCM token length");
-        return res
-          .status(400)
-          .json({ success: false, error: "Invalid FCM token length" });
-      }
+    if (fcmToken && typeof fcmToken !== "string") {
+      console.error("[createProfile] Invalid FCM token format");
+      return res
+        .status(400)
+        .json({ success: false, error: "FCM token must be a string" });
+    }
+    // Basic FCM token validation (example: non-empty and reasonable length)
+    if (
+      fcmToken &&
+      (fcmToken.trim().length < 50 || fcmToken.trim().length > 500)
+    ) {
+      console.error("[createProfile] Invalid FCM token length");
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid FCM token length" });
     }
 
     let profile = await Profile.findOne({ phone });
@@ -285,18 +287,18 @@ export const createProfile = async (req, res) => {
       } for phone=${phone}`
     );
 
-    const normalizedFcmToken = fcmToken ? fcmToken.trim() : null;
-
     if (profile) {
       profile.displayName = displayName.trim();
       profile.isVisible = isVisible;
       profile.isNumberVisible = isNumberVisible;
       profile.avatarUrl = avatarUrl.trim();
-      // Update fcmToken only if a valid one is provided; otherwise, set to null
-      profile.fcmToken = normalizedFcmToken;
+      // Only update fcmToken if a valid one is provided
+      if (fcmToken.trim()) {
+        profile.fcmToken = fcmToken.trim();
+      }
       console.log(
         `[createProfile] Updating profile: phone=${phone}, fcmToken=${
-          normalizedFcmToken ? "provided" : "null"
+          fcmToken ? "provided" : "empty"
         }`
       );
     } else {
@@ -307,11 +309,11 @@ export const createProfile = async (req, res) => {
         isVisible,
         isNumberVisible,
         avatarUrl: avatarUrl.trim(),
-        fcmToken: normalizedFcmToken,
+        fcmToken: fcmToken.trim(),
       });
       console.log(
         `[createProfile] Creating new profile: phone=${phone}, fcmToken=${
-          normalizedFcmToken ? "provided" : "null"
+          fcmToken ? "provided" : "empty"
         }`
       );
     }
@@ -328,15 +330,15 @@ export const createProfile = async (req, res) => {
         displayName: displayName.trim(),
         online: false,
         lastSeen: new Date(),
-        fcmToken: normalizedFcmToken, // Sync FCM token to User model
+        fcmToken: fcmToken.trim(), // Sync FCM token to User model
       });
       await user.save();
       console.log(
         `[createProfile] New user created: phone=${phone}, userId=${user._id}`
       );
     } else {
-      if (normalizedFcmToken !== user.fcmToken) {
-        user.fcmToken = normalizedFcmToken; // Update User model with new fcmToken
+      if (fcmToken.trim()) {
+        user.fcmToken = fcmToken.trim(); // Update User model if fcmToken is provided
         await user.save();
       }
       console.log(
@@ -365,153 +367,6 @@ export const createProfile = async (req, res) => {
       .json({ success: false, error: "Server error", details: err.message });
   }
 };
-
-/**
- * Create or Update Profile
- * 
-
- 
- */
-// export const createProfile = async (req, res) => {
-//   try {
-//     console.log(
-//       `[createProfile] Processing request: body=${JSON.stringify(
-//         req.body
-//       )}, userId=${req.user._id}`
-//     );
-//     if (!req.body || typeof req.body !== "object") {
-//       console.error("[createProfile] Missing or invalid request body");
-//       return res.status(400).json({
-//         success: false,
-//         error: "Request body is missing or invalid JSON",
-//       });
-//     }
-
-//     const {
-//       displayName,
-//       isVisible = false,
-//       isNumberVisible = false,
-//       avatarUrl = "",
-//       fcmToken = "",
-//     } = req.body;
-//     const phone = req.user?.phone;
-
-//     if (!phone) {
-//       console.error("[createProfile] Phone number not found in token");
-//       return res
-//         .status(401)
-//         .json({ success: false, error: "Phone number not found in token" });
-//     }
-//     if (!displayName?.trim()) {
-//       console.error("[createProfile] Display name is required");
-//       return res
-//         .status(400)
-//         .json({ success: false, error: "Display name is required" });
-//     }
-//     if (fcmToken && typeof fcmToken !== "string") {
-//       console.error("[createProfile] Invalid FCM token format");
-//       return res
-//         .status(400)
-//         .json({ success: false, error: "FCM token must be a string" });
-//     }
-//     // Basic FCM token validation (example: non-empty and reasonable length)
-//     if (
-//       fcmToken &&
-//       (fcmToken.trim().length < 50 || fcmToken.trim().length > 500)
-//     ) {
-//       console.error("[createProfile] Invalid FCM token length");
-//       return res
-//         .status(400)
-//         .json({ success: false, error: "Invalid FCM token length" });
-//     }
-
-//     let profile = await Profile.findOne({ phone });
-//     console.log(
-//       `[createProfile] Profile ${
-//         profile ? "found" : "not found"
-//       } for phone=${phone}`
-//     );
-
-//     if (profile) {
-//       profile.displayName = displayName.trim();
-//       profile.isVisible = isVisible;
-//       profile.isNumberVisible = isNumberVisible;
-//       profile.avatarUrl = avatarUrl.trim();
-//       // Only update fcmToken if a valid one is provided
-//       if (fcmToken.trim()) {
-//         profile.fcmToken = fcmToken.trim();
-//       }
-//       console.log(
-//         `[createProfile] Updating profile: phone=${phone}, fcmToken=${
-//           fcmToken ? "provided" : "empty"
-//         }`
-//       );
-//     } else {
-//       profile = new Profile({
-//         phone,
-//         displayName: displayName.trim(),
-//         randomNumber: generateRandom11DigitNumber(),
-//         isVisible,
-//         isNumberVisible,
-//         avatarUrl: avatarUrl.trim(),
-//         fcmToken: fcmToken.trim(),
-//       });
-//       console.log(
-//         `[createProfile] Creating new profile: phone=${phone}, fcmToken=${
-//           fcmToken ? "provided" : "empty"
-//         }`
-//       );
-//     }
-
-//     await profile.save();
-//     console.log(
-//       `[createProfile] Profile saved: phone=${phone}, profileId=${profile._id}`
-//     );
-
-//     let user = await User.findOne({ phone });
-//     if (!user) {
-//       user = new User({
-//         phone,
-//         displayName: displayName.trim(),
-//         online: false,
-//         lastSeen: new Date(),
-//         fcmToken: fcmToken.trim(), // Sync FCM token to User model
-//       });
-//       await user.save();
-//       console.log(
-//         `[createProfile] New user created: phone=${phone}, userId=${user._id}`
-//       );
-//     } else {
-//       if (fcmToken.trim()) {
-//         user.fcmToken = fcmToken.trim(); // Update User model if fcmToken is provided
-//         await user.save();
-//       }
-//       console.log(
-//         `[createProfile] User found: phone=${phone}, userId=${user._id}`
-//       );
-//     }
-
-//     const contact = await Contact.findOne({
-//       userId: req.user._id,
-//       phone,
-//     }).select("customName");
-//     const customName = contact?.customName || null;
-//     console.log(
-//       `[createProfile] Custom name for phone=${phone}: ${customName}`
-//     );
-
-//     return res.status(201).json({
-//       success: true,
-//       message: "Profile saved successfully",
-//       profile: formatProfile(profile, user, customName),
-//     });
-//   } catch (err) {
-//     console.error(`[createProfile] Error: ${err.message}`);
-//     return res
-//       .status(500)
-//       .json({ success: false, error: "Server error", details: err.message });
-//   }
-// };
 /**
  * Get My Profile
  */
