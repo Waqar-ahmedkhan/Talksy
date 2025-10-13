@@ -11,12 +11,12 @@ const chatSchema = new mongoose.Schema({
   groupId: { type: mongoose.Schema.Types.ObjectId, ref: "Group" }, // For group messages
   type: {
     type: String,
-    enum: ["text", "voice", "video", "file", "image", "location"], // Added "image"
+    enum: ["text", "voice", "video", "file", "image", "location"],
     default: "text",
   },
   content: { type: String, required: true }, // Text, URL, or JSON string for location
   fileType: { type: String }, // MIME type (e.g., "image/jpeg", "video/mp4", "application/pdf")
-  fileName: { type: String }, // Added for document names (e.g., "report.pdf")
+  fileName: { type: String }, // For document names (e.g., "report.pdf")
   location: {
     latitude: { type: Number },
     longitude: { type: Number },
@@ -30,6 +30,7 @@ const chatSchema = new mongoose.Schema({
   },
   deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "Profile" }],
   pinned: { type: Boolean, default: false },
+  forwardedFrom: { type: mongoose.Schema.Types.ObjectId, ref: "Chat" }, // Reference to original message
   createdAt: { type: Date, default: Date.now },
 });
 

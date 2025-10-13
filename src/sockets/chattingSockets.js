@@ -755,6 +755,183 @@ export const initChatSocket = (server) => {
       }
     });
 
+
+    /** Send location */
+socket.on(
+  "send_location",
+  async ({ senderId, receiverId, groupId, channelId, latitude, longitude, name }, callback) => {
+    const timestamp = moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
+    try {
+      // Validate input
+      if (
+        !senderId ||
+        (!receiverId && !groupId && !channelId) ||
+        senderId !== socket.userId ||
+        typeof latitude !== "number" ||
+        typeof longitude !== "number" ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180 ||
+        (name && typeof name !== "string")
+      ) {
+        socket.emit("location_error", { error: "Invalid location or recipient data" });
+        if (callback) callback({ error: "Invalid location or recipient data" });
+        return;
+      }
+
+      // Validate sender profile
+      const senderProfile = await Profile.findById(senderId);
+      if (!senderProfile) {
+        socket.emit("location_error", { error: "Sender profile not found" });
+        if (callback) callback({ error: "Sender profile not found" });
+        return;
+      }
+
+      // Validate recipient
+      if (receiverId) {
+        let receiverProfile = await Profile.findById(receiverId);
+        if (!receiverProfile) {
+          const user = await User.findById(receiverId);
+          if (user) {
+            receiverProfile = await Profile.findOne({ phone: user.phone });
+            if (!receiverProfile) {
+              receiverProfile = await Profile.create({
+                phone: user.phone,
+                displayName: user.displayName,
+                randomNumber: Math.random().toString(36).substring(2, 10),
+                isVisible: false,
+                isNumberVisible: false,
+                avatarUrl: "",
+              });
+            }
+            receiverId = receiverProfile._id.toString();
+          } else {
+            socket.emit("location_error", { error: "Receiver profile not found" });
+            if (callback) callback({ error: "Receiver profile not found" });
+            return;
+          }
+        }
+
+        const blocked = await Block.findOne({
+          $or: [
+            { blockerId: receiverId, blockedId: senderId },
+            { blockerId: senderId, blockedId: receiverId },
+          ],
+        });
+        if (blocked) {
+          socket.emit("location_error", { error: "User is blocked" });
+          if (callback) callback({ error: "User is blocked" });
+          return;
+        }
+      } else if (groupId) {
+        const group = await Group.findById(groupId);
+        if (!group || !group.members.includes(senderId)) {
+          socket.emit("location_error", {
+            error: group ? "Sender not in group" : "Group not found",
+          });
+          if (callback) callback({ error: group ? "Sender not in group" : "Group not found" });
+          return;
+        }
+      } else if (channelId) {
+        const channel = await Channel.findById(channelId);
+        if (!channel || !channel.members.includes(senderId)) {
+          socket.emit("location_error", {
+            error: channel ? "Sender not in channel" : "Channel not found",
+          });
+          if (callback) callback({ error: channel ? "Sender not in channel" : "Channel not found" });
+          return;
+        }
+      }
+
+      // Create location message
+      const chat = new Chat({
+        senderId,
+        receiverId: receiverId || undefined,
+        groupId: groupId || undefined,
+        channelId: channelId || undefined,
+        content: JSON.stringify({ latitude, longitude, name: name || undefined }), // Fallback for clients not using location field
+        type: "location",
+        location: { latitude, longitude, name: name || undefined },
+        status: "sent",
+        deletedFor: [],
+      });
+
+      await chat.save();
+
+      const locationData = {
+        id: chat._id.toString(),
+        senderId: chat.senderId.toString(),
+        receiverId: chat.receiverId?.toString(),
+        groupId: chat.groupId?.toString(),
+        channelId: chat.channelId?.toString(),
+        content: chat.content,
+        type: chat.type,
+        location: chat.location,
+        timestamp: chat.createdAt.toISOString(),
+        status: chat.status,
+      };
+
+      // Emit to sender
+      socket.emit("location_sent", locationData);
+
+      // Emit to recipients
+      if (receiverId) {
+        const receiverSocket = onlineUsers.get(receiverId);
+        if (receiverSocket) {
+          io.to(receiverSocket).emit("receive_location", locationData);
+          chat.status = "delivered";
+          await chat.save();
+          locationData.status = "delivered";
+        }
+      } else if (groupId) {
+        const group = await Group.findById(groupId);
+        if (group) {
+          group.members
+            .map((id) => id.toString())
+            .filter((id) => id !== senderId)
+            .forEach((memberId) => {
+              const memberSocket = onlineUsers.get(memberId);
+              if (memberSocket) {
+                io.to(memberSocket).emit("receive_location", locationData);
+              }
+            });
+          chat.status = "delivered";
+          await chat.save();
+          locationData.status = "delivered";
+        }
+      } else if (channelId) {
+        const channel = await Channel.findById(channelId);
+        if (channel) {
+          channel.members
+            .map((id) => id.toString())
+            .filter((id) => id !== senderId)
+            .forEach((memberId) => {
+              const memberSocket = onlineUsers.get(memberId);
+              if (memberSocket) {
+                io.to(memberSocket).emit("receive_location", locationData);
+              }
+            });
+          chat.status = "delivered";
+          await chat.save();
+          locationData.status = "delivered";
+        }
+      }
+
+      if (callback) callback({ status: "success", id: chat._id.toString() });
+    } catch (err) {
+      console.error(`❌ Send location error: ${err.message} at ${timestamp}`, {
+        senderId,
+        receiverId,
+        groupId,
+        channelId,
+      });
+      socket.emit("location_error", { error: "Failed to send location" });
+      if (callback) callback({ error: "Failed to send location" });
+    }
+  }
+);
+
     /** Delete message */
     socket.on("delete_message", async ({ chatId, userId, forEveryone }) => {
       try {
@@ -947,6 +1124,8 @@ export const initChatSocket = (server) => {
 
   return io;
 };
+
+// import { Server } from "socket.io";
 // import User from "../models/User.js";
 // import Chat from "../models/Chat.js";
 // import Block from "../models/Block.js";
