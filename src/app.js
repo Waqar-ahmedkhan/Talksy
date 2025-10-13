@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import authRoutes from "./routes/auth.routes.js";
 import profileRoutes from "./routes/profiles.routes.js";
 import userRoutes from "./routes/user.routes.js";
-import uploadRoutes from "./routes/upload.routes.js"; // <-- IMPORT THE NEW UPLOAD ROUTES
+import uploadRoutes from "./routes/upload.routes.js";
 
 dotenv.config();
 
