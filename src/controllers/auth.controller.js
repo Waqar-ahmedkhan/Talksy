@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import Otp from "../models/Otp.js";
 import { generateOtp } from "../utils/otp.js";
+import  User from "../models/User.js"
 
 dotenv.config();
 
