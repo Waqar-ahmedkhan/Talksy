@@ -176,8 +176,8 @@ export const createProfile = async (req, res) => {
       return res.status(400).json({ success: false, error: "Display name is required" });
     }
 
-    // let profile = await Profile.findOne({ phone });
-    // console.log(`[createProfile] Profile ${profile ? "found" : "not found"} for phone=${phone}`);
+    let profile = await Profile.findOne({ phone });
+    console.log(`[createProfile] Profile ${profile ? "found" : "not found"} for phone=${phone}`);
 
     if (profile) {
       profile.displayName = displayName.trim();

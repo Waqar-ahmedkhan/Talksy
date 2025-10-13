@@ -68,7 +68,7 @@ export const verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
-    // Strict validation
+    // Strict validation for Pakistan phone numbers
     const phoneRegex = /^\+92[0-9]{10}$/;
     if (!phone || !phoneRegex.test(phone)) {
       return res.status(400).json({
@@ -83,18 +83,18 @@ export const verifyOtp = async (req, res) => {
     // Check OTP record
     const record = await Otp.findOne({ phone });
     if (!record) {
-      return res.status(404).json({ success: false, message: "No OTP found" });
+      return res.status(404).json({ success: false, message: "No OTP found. Please request a new one." });
     }
 
     const { otp: storedOtp, expiry } = record;
 
-    // Check expiry
+    // Check if OTP has expired
     if (Date.now() > new Date(expiry).getTime()) {
       await Otp.deleteOne({ phone });
-      return res.status(400).json({ success: false, message: "OTP expired" });
+      return res.status(400).json({ success: false, message: "OTP expired. Please request a new one." });
     }
 
-    // Validate OTP
+    // Validate OTP (use fixed OTP in development)
     const env = process.env.NODE_ENV || "development";
     const isValidOtp =
       env === "development"
@@ -105,22 +105,37 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
 
-    // Remove OTP after successful verification
-    await Otp.deleteOne({ phone });
-
-    // Check JWT_SECRET
-    if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET not defined!");
-      return res
-        .status(500)
-        .json({ success: false, error: "Server configuration error" });
+    // ✅ CRITICAL: Ensure User exists — create if first time
+    let user = await User.findOne({ phone });
+    if (!user) {
+      user = new User({
+        phone,
+        online: false,
+        lastSeen: new Date(),
+        // Add other default fields if your User model requires them
+      });
+      await user.save();
+      console.log(`[verifyOtp] New user created for phone: ${phone}`);
     }
 
-    // Generate JWT token
+    // Delete OTP after successful verification (one-time use)
+    await Otp.deleteOne({ phone });
+
+    // Ensure JWT_SECRET is available
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not defined in environment variables!");
+      return res.status(500).json({
+        success: false,
+        error: "Server configuration error",
+      });
+    }
+
+    // Generate JWT token (valid for 30 days)
     const token = jwt.sign({ phone }, process.env.JWT_SECRET, {
-      expiresIn: "30d", // 30 days ~ 1 month
+      expiresIn: "30d",
     });
 
+    // Return success response
     return res.json({
       success: true,
       message: "OTP verified successfully",
