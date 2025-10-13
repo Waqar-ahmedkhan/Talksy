@@ -749,7 +749,7 @@ export const getChatList = async (req, res) => {
       .sort({ pinned: -1, createdAt: -1 })
       .populate(
         "senderId receiverId",
-        "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt"
+        "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
       );
     console.log(`[getChatList] Found ${chats.length} chats`);
 
@@ -777,6 +777,9 @@ export const getChatList = async (req, res) => {
       "phone online lastSeen fcmToken"
     );
     console.log(`[getChatList] Found ${users.length} users`);
+    users.forEach(user => {
+      console.log(`[getChatList] User: phone=${user.phone}, fcmToken=${user.fcmToken || 'null'}`);
+    });
     const userMap = new Map(
       users.map((u) => [normalizePhoneNumber(u.phone), u])
     );
@@ -820,6 +823,7 @@ export const getChatList = async (req, res) => {
             ? chat.receiverId
             : chat.senderId;
         const otherPhone = normalizePhoneNumber(otherProfile.phone);
+        console.log(`[getChatList] Other profile fcmToken: ${otherProfile.fcmToken || 'null'}`);
         const customName = contactMap.get(otherPhone) || null;
         let displayName;
         if (customName) {
@@ -842,7 +846,7 @@ export const getChatList = async (req, res) => {
             avatarUrl: otherProfile.avatarUrl || "",
             online: userMap.get(otherPhone)?.online || false,
             lastSeen: userMap.get(otherPhone)?.lastSeen || null,
-            fcmToken: userMap.get(otherPhone)?.fcmToken || null,
+            fcmToken: otherProfile.fcmToken || userMap.get(otherPhone)?.fcmToken || null,
           },
           latestMessage: chat,
           unreadCount:

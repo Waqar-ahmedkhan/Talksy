@@ -947,8 +947,6 @@ export const initChatSocket = (server) => {
 
   return io;
 };
-
-// import { Server } from "socket.io";
 // import User from "../models/User.js";
 // import Chat from "../models/Chat.js";
 // import Block from "../models/Block.js";
