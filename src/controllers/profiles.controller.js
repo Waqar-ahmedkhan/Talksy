@@ -4,9 +4,7 @@ import User from "../models/User.js";
 import Chat from "../models/Chat.js";
 import Contact from "../models/Contact.js";
 
-/**
- * Middleware to verify JWT token and fetch user _id
- */
+
 export const authenticateToken = async (req, res, next) => {
   try {
     console.log("[authenticateToken] Starting token verification");
@@ -64,12 +62,7 @@ export const authenticateToken = async (req, res, next) => {
   }
 };
 
-/**
- * Helper: Format profile for response
- */
-/**
- * Helper: Format profile for response
- */
+
 const formatProfile = (profile, user, customName = null) => {
   const phone = profile?.phone || "";
   const name = customName || profile?.displayName || "Unknown";
@@ -153,80 +146,7 @@ const formatChat = (chat) => {
   return formatted;
 };
 
-/**
- * Create or Update Profile
- */
-// export const createProfile = async (req, res) => {
-//   try {
-//     console.log(`[createProfile] Processing request: body=${JSON.stringify(req.body)}, userId=${req.user._id}`);
-//     if (!req.body || typeof req.body !== "object") {
-//       console.error("[createProfile] Missing or invalid request body");
-//       return res.status(400).json({ success: false, error: "Request body is missing or invalid JSON" });
-//     }
 
-//     const { displayName, isVisible = false, isNumberVisible = false, avatarUrl = "" } = req.body;
-//     const phone = req.user?.phone;
-
-//     if (!phone) {
-//       console.error("[createProfile] Phone number not found in token");
-//       return res.status(401).json({ success: false, error: "Phone number not found in token" });
-//     }
-//     if (!displayName?.trim()) {
-//       console.error("[createProfile] Display name is required");
-//       return res.status(400).json({ success: false, error: "Display name is required" });
-//     }
-
-//     let profile = await Profile.findOne({ phone });
-//     console.log(`[createProfile] Profile ${profile ? "found" : "not found"} for phone=${phone}`);
-
-//     if (profile) {
-//       profile.displayName = displayName.trim();
-//       profile.isVisible = isVisible;
-//       profile.isNumberVisible = isNumberVisible;
-//       profile.avatarUrl = avatarUrl.trim();
-//       console.log(`[createProfile] Updating profile: phone=${phone}`);
-//     } else {
-//       profile = new Profile({
-//         phone,
-//         displayName: displayName.trim(),
-//         randomNumber: generateRandom11DigitNumber(),
-//         isVisible,
-//         isNumberVisible,
-//         avatarUrl: avatarUrl.trim(),
-//       });
-//       console.log(`[createProfile] Creating new profile: phone=${phone}`);
-//     }
-
-//     await profile.save();
-//     console.log(`[createProfile] Profile saved: phone=${phone}, profileId=${profile._id}`);
-
-//     let user = await User.findOne({ phone });
-//     if (!user) {
-//       user = new User({ phone, displayName: displayName.trim(), online: false, lastSeen: new Date() });
-//       await user.save();
-//       console.log(`[createProfile] New user created: phone=${phone}, userId=${user._id}`);
-//     } else {
-//       console.log(`[createProfile] User found: phone=${phone}, userId=${user._id}`);
-//     }
-
-//     const contact = await Contact.findOne({ userId: req.user._id, phone }).select("customName");
-//     const customName = contact?.customName || null;
-//     console.log(`[createProfile] Custom name for phone=${phone}: ${customName}`);
-
-//     return res.status(201).json({
-//       success: true,
-//       message: "Profile saved successfully",
-//       profile: formatProfile(profile, user, customName),
-//     });
-//   } catch (err) {
-//     console.error(`[createProfile] Error: ${err.message}`);
-//     return res.status(500).json({ success: false, error: "Server error", details: err.message });
-//   }
-// };
-
-/**
- * Create or Update Profile
- */
 export const createProfile = async (req, res) => {
   try {
     console.log(
@@ -269,7 +189,6 @@ export const createProfile = async (req, res) => {
         .status(400)
         .json({ success: false, error: "FCM token must be a string" });
     }
-    // Basic FCM token validation (example: non-empty and reasonable length)
     if (
       fcmToken &&
       (fcmToken.trim().length < 50 || fcmToken.trim().length > 500)
@@ -292,7 +211,6 @@ export const createProfile = async (req, res) => {
       profile.isVisible = isVisible;
       profile.isNumberVisible = isNumberVisible;
       profile.avatarUrl = avatarUrl.trim();
-      // Only update fcmToken if a valid one is provided
       if (fcmToken.trim()) {
         profile.fcmToken = fcmToken.trim();
       }
@@ -330,7 +248,7 @@ export const createProfile = async (req, res) => {
         displayName: displayName.trim(),
         online: false,
         lastSeen: new Date(),
-        fcmToken: fcmToken.trim(), // Sync FCM token to User model
+        fcmToken: fcmToken.trim(), 
       });
       await user.save();
       console.log(
@@ -338,7 +256,7 @@ export const createProfile = async (req, res) => {
       );
     } else {
       if (fcmToken.trim()) {
-        user.fcmToken = fcmToken.trim(); // Update User model if fcmToken is provided
+        user.fcmToken = fcmToken.trim(); 
         await user.save();
       }
       console.log(
@@ -367,9 +285,6 @@ export const createProfile = async (req, res) => {
       .json({ success: false, error: "Server error", details: err.message });
   }
 };
-/**
- * Get My Profile
- */
 
 export const getMyProfile = async (req, res) => {
   try {
@@ -413,52 +328,7 @@ export const getMyProfile = async (req, res) => {
       .json({ success: false, error: "Server error", details: err.message });
   }
 };
-// export const getMyProfile = async (req, res) => {
-//   try {
-//     console.log(
-//       `[getMyProfile] Fetching profile: phone=${req.user.phone}, userId=${req.user._id}`
-//     );
-//     const profile = await Profile.findOne({ phone: req.user.phone });
-//     if (!profile) {
-//       console.error(
-//         `[getMyProfile] Profile not found: phone=${req.user.phone}`
-//       );
-//       return res
-//         .status(404)
-//         .json({ success: false, error: "Profile not found" });
-//     }
 
-//     const user = await User.findOne({ phone: req.user.phone });
-//     console.log(
-//       `[getMyProfile] User ${user ? "found" : "not found"}: phone=${
-//         req.user.phone
-//       }`
-//     );
-
-//     const contact = await Contact.findOne({
-//       userId: req.user._id,
-//       phone: req.user.phone,
-//     }).select("customName");
-//     const customName = contact?.customName || null;
-//     console.log(
-//       `[getMyProfile] Custom name: phone=${req.user.phone}, customName=${customName}`
-//     );
-
-//     return res.json({
-//       success: true,
-//       profile: formatProfile(profile, user, customName),
-//     });
-//   } catch (err) {
-//     console.error(`[getMyProfile] Error: ${err.message}`);
-//     return res
-//       .status(500)
-//       .json({ success: false, error: "Server error", details: err.message });
-//   }
-// };
-
-/**
- * Get Public Profiles (paginated)
- */
 export const getPublicProfiles = async (req, res) => {
   try {
     console.log(
