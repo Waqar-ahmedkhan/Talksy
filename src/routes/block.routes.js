@@ -4,6 +4,7 @@ import Block from "../models/Block.js";
 import Profile from "../models/Profile.js";
 import User from "../models/User.js";
 import Contact from "../models/Contact.js";
+import Group from "../models/Group.js";
 import { authenticateToken, formatProfile, normalizePhoneNumber } from "../controllers/profiles.controller.js";
 
 const router = express.Router();
@@ -49,7 +50,6 @@ router.post("/", authenticateToken, async (req, res) => {
     await block.save();
     console.log(`[blockUser] Block created: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
 
-    // Emit Socket.IO event
     const io = req.app.locals.io;
     const blockedUser = await User.findOne({ phone: normalizedBlockedPhone });
     if (blockedUser) {
@@ -59,6 +59,42 @@ router.post("/", authenticateToken, async (req, res) => {
       });
       console.log(`[blockUser] Emitted blocked_update to blockedId=${blockedId}, timestamp=${timestamp}`);
     }
+
+    // Find groups where both blocker and blocked are members and emit updates
+    const groups = await Group.find({
+      members: { $all: [blockerId, blockedId] },
+    }).populate("members", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken")
+      .populate("admins", "phone displayName")
+      .populate("createdBy", "phone displayName");
+
+    const users = await User.find({ _id: { $in: groups.flatMap(g => g.members.map(m => m._id)) } }).select("phone online lastSeen fcmToken");
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+    const contacts = await Contact.find({ userId: blockerId, phone: { $in: users.map(u => u.phone) } }).select("phone customName");
+    const contactMap = new Map(contacts.map(c => [normalizePhoneNumber(c.phone), c.customName || null]));
+
+    groups.forEach(group => {
+      const formattedGroup = {
+        id: group._id,
+        name: group.name,
+        channelId: group.channelId || null,
+        pictureUrl: group.pictureUrl || null,
+        musicUrl: group.musicUrl || null,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+        createdBy: formatProfile(group.createdBy, userMap.get(group.createdBy?._id?.toString()), contactMap.get(normalizePhoneNumber(group.createdBy?.phone))),
+        admins: group.admins.map(admin => formatProfile(admin, userMap.get(admin._id.toString()), contactMap.get(normalizePhoneNumber(admin.phone)))),
+        members: group.members.map(member => ({
+          ...formatProfile(member, userMap.get(member._id.toString()), contactMap.get(normalizePhoneNumber(member.phone))),
+          isBlocked: member._id.toString() === blockedId.toString(),
+        })),
+      };
+      io.to(`group_${group._id}`).emit("group_update", {
+        groupId: group._id,
+        action: "member_blocked",
+        group: formattedGroup,
+      });
+      console.log(`[blockUser] Emitted group_update to group_${group._id}, timestamp=${timestamp}`);
+    });
 
     const contact = await Contact.findOne({ userId: blockerId, phone: normalizedBlockedPhone }).select("customName");
     const customName = contact?.customName || null;
@@ -100,7 +136,6 @@ router.delete("/:blockedId", authenticateToken, async (req, res) => {
 
     console.log(`[unblockUser] Block removed: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
 
-    // Emit Socket.IO event
     const io = req.app.locals.io;
     io.to(blockedId).emit("blocked_update", {
       blockerId: blockerId.toString(),
@@ -113,6 +148,42 @@ router.delete("/:blockedId", authenticateToken, async (req, res) => {
     const contact = await Contact.findOne({ userId: blockerId, phone: blockedProfile?.phone }).select("customName");
     const customName = contact?.customName || null;
     const blockedProfileFormatted = formatProfile(blockedProfile, blockedUser, customName);
+
+    // Find groups where both blocker and blocked are members and emit updates
+    const groups = await Group.find({
+      members: { $all: [blockerId, blockedId] },
+    }).populate("members", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken")
+      .populate("admins", "phone displayName")
+      .populate("createdBy", "phone displayName");
+
+    const users = await User.find({ _id: { $in: groups.flatMap(g => g.members.map(m => m._id)) } }).select("phone online lastSeen fcmToken");
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+    const contacts = await Contact.find({ userId: blockerId, phone: { $in: users.map(u => u.phone) } }).select("phone customName");
+    const contactMap = new Map(contacts.map(c => [normalizePhoneNumber(c.phone), c.customName || null]));
+
+    groups.forEach(group => {
+      const formattedGroup = {
+        id: group._id,
+        name: group.name,
+        channelId: group.channelId || null,
+        pictureUrl: group.pictureUrl || null,
+        musicUrl: group.musicUrl || null,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+        createdBy: formatProfile(group.createdBy, userMap.get(group.createdBy?._id?.toString()), contactMap.get(normalizePhoneNumber(group.createdBy?.phone))),
+        admins: group.admins.map(admin => formatProfile(admin, userMap.get(admin._id.toString()), contactMap.get(normalizePhoneNumber(admin.phone)))),
+        members: group.members.map(member => ({
+          ...formatProfile(member, userMap.get(member._id.toString()), contactMap.get(normalizePhoneNumber(member.phone))),
+          isBlocked: false,
+        })),
+      };
+      io.to(`group_${group._id}`).emit("group_update", {
+        groupId: group._id,
+        action: "member_unblocked",
+        group: formattedGroup,
+      });
+      console.log(`[unblockUser] Emitted group_update to group_${group._id}, timestamp=${timestamp}`);
+    });
 
     return res.json({
       success: true,
@@ -147,30 +218,42 @@ router.get("/", authenticateToken, async (req, res) => {
       .skip(skip)
       .limit(limit)
       .populate("blockedId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken");
-    console.log(`[getBlockedUsers] Found ${blocks.length} blocked users, timestamp=${timestamp}`);
+    console.log(`[getBlockedUsers] Found ${blocks.length} blocked users, blockedIds=${blocks.map(b => b.blockedId._id)}, timestamp=${timestamp}`);
+
+    if (blocks.length === 0) {
+      console.log(`[getBlockedUsers] No blocked users found for blockerId=${blockerId}, timestamp=${timestamp}`);
+    }
 
     const blockedUserIds = blocks.map((block) => block.blockedId._id.toString());
     const users = await User.find({ _id: { $in: blockedUserIds } }).select("phone online lastSeen fcmToken");
+    console.log(`[getBlockedUsers] Found ${users.length} users for blockedUserIds=${blockedUserIds}, timestamp=${timestamp}`);
     const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
     const contacts = await Contact.find({
       userId: blockerId,
       phone: { $in: users.map((u) => u.phone) },
     }).select("phone customName");
+    console.log(`[getBlockedUsers] Found ${contacts.length} contacts, timestamp=${timestamp}`);
     const contactMap = new Map(contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null]));
 
     const blockedProfiles = blocks.map((block) => {
       const blockedProfile = block.blockedId;
       const blockedUser = userMap.get(blockedProfile._id.toString());
       const customName = contactMap.get(normalizePhoneNumber(blockedProfile.phone));
+      if (!blockedUser) {
+        console.warn(`[getBlockedUsers] No user found for blockedProfileId=${blockedProfile._id}, timestamp=${timestamp}`);
+      }
       return formatProfile(blockedProfile, blockedUser, customName);
     });
+
+    const total = await Block.countDocuments({ blockerId });
+    console.log(`[getBlockedUsers] Total blocked count=${total}, timestamp=${timestamp}`);
 
     return res.json({
       success: true,
       page,
       limit,
-      total: await Block.countDocuments({ blockerId }),
+      total,
       blockedProfiles,
     });
   } catch (err) {

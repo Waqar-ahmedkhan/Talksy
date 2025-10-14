@@ -417,7 +417,6 @@ export const initAudioSocket = (server) => {
         return;
       }
 
-      // Unmark busy (idempotent: safe to call multiple times)
       const wasBusyUser = busyUsers.has(resolvedUser);
       const wasBusyPeer = busyUsers.has(resolvedPeer);
       busyUsers.delete(resolvedUser);
@@ -436,7 +435,6 @@ export const initAudioSocket = (server) => {
         console.warn(`[AUDIO_END_WARN] Peer socket not found for ${resolvedPeer} at ${getPKTTimestamp()}`);
       }
 
-      // Leave call room
       const callRoom = [resolvedUser, resolvedPeer].sort().join("-");
       const wasInRoom = socket.rooms.has(callRoom);
       socket.leave(callRoom);
@@ -446,7 +444,6 @@ export const initAudioSocket = (server) => {
         console.log(`[AUDIO_END_ROOM_WARN] User ${resolvedUser} not in room ${callRoom} (no-op leave) at ${getPKTTimestamp()}`);
       }
 
-      // Also leave peer if possible
       if (peerSocket) {
         const peerSocketObj = io.sockets.sockets.get(peerSocket);
         if (peerSocketObj) {
@@ -459,7 +456,6 @@ export const initAudioSocket = (server) => {
       }
     });
 
-    /** Disconnect handling */
     socket.on("disconnect", async () => {
       console.log(`[AUDIO_DISCONNECT] Socket disconnect event: ${socket.id} (user: ${socket.userId || 'unknown'}) at ${getPKTTimestamp()}`);
       
@@ -475,12 +471,10 @@ export const initAudioSocket = (server) => {
 
       const wasBusy = busyUsers.has(disconnectedUserId);
 
-      // Clean up presence
       onlineUsers.delete(disconnectedUserId);
       if (wasBusy) busyUsers.delete(disconnectedUserId); // Only if was busy
       console.log(`[AUDIO_DISCONNECT_CLEANUP] Removed ${disconnectedUserId} from online/busy maps (was busy: ${wasBusy}) at ${getPKTTimestamp()}`);
 
-      // Update user offline status
       try {
         const dbUpdate = await User.findByIdAndUpdate(disconnectedUserId, { online: false, lastSeen: new Date() });
         console.log(`[AUDIO_DISCONNECT_DB] User ${disconnectedUserId} marked offline in DB (updated: ${!!dbUpdate}) at ${getPKTTimestamp()}`);
@@ -488,7 +482,6 @@ export const initAudioSocket = (server) => {
         console.error(`[AUDIO_DISCONNECT_ERROR] DB update failed for ${disconnectedUserId}:`, dbErr, `at ${getPKTTimestamp()}`);
       }
 
-      // Notify if user was receiving a call
       if (pendingCalls.has(disconnectedUserId)) {
         const { callerId } = pendingCalls.get(disconnectedUserId);
         pendingCalls.delete(disconnectedUserId);
@@ -501,7 +494,6 @@ export const initAudioSocket = (server) => {
         }
       }
 
-      // Notify peers in active calls (only if was busy)
       if (wasBusy) {
         console.log(`[AUDIO_DISCONNECT_BUSY] Notifying peers of busy user disconnect: ${disconnectedUserId} at ${getPKTTimestamp()}`);
         let notifiedCount = 0;
