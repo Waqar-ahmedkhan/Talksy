@@ -1,210 +1,412 @@
+// routes/groups.js
 import express from "express";
 import mongoose from "mongoose";
-import Block from "../models/Block.js";
+import Group from "../models/Group.js";
 import Profile from "../models/Profile.js";
 import User from "../models/User.js";
 import Contact from "../models/Contact.js";
+import Block from "../models/Block.js";
 import { authenticateToken, formatProfile, normalizePhoneNumber } from "../controllers/profiles.controller.js";
 
 const router = express.Router();
 
-// POST /api/blocks - Block a user
-router.post("/", authenticateToken, async (req, res) => {
-  const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
-  try {
-    console.log(`[blockUser] Processing request: body=${JSON.stringify(req.body)}, userId=${req.user._id}, timestamp=${timestamp}`);
-    const { blockedPhone } = req.body;
-    const blockerId = req.user._id;
-
-    if (!blockedPhone) {
-      console.error(`[blockUser] Missing blockedPhone, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Blocked phone number is required" });
-    }
-
-    const normalizedBlockedPhone = normalizePhoneNumber(blockedPhone);
-    if (!/^\+?[1-9]\d{1,14}$/.test(normalizedBlockedPhone)) {
-      console.error(`[blockUser] Invalid phone number format: ${normalizedBlockedPhone}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Invalid phone number format" });
-    }
-
-    const blockedProfile = await Profile.findOne({ phone: normalizedBlockedPhone });
-    if (!blockedProfile) {
-      console.error(`[blockUser] Profile not found: phone=${normalizedBlockedPhone}, timestamp=${timestamp}`);
-      return res.status(404).json({ success: false, error: "Target user not found" });
-    }
-
-    const blockedId = blockedProfile._id;
-    if (blockedId.toString() === blockerId.toString()) {
-      console.error(`[blockUser] Self-blocking attempted: userId=${blockerId}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Cannot block yourself" });
-    }
-
-    const existingBlock = await Block.findOne({ blockerId, blockedId });
-    if (existingBlock) {
-      console.warn(`[blockUser] User already blocked: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "User already blocked" });
-    }
-
-    const block = new Block({ blockerId, blockedId });
-    await block.save();
-    console.log(`[blockUser] Block created: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
-
-    const io = req.app.locals.io;
-    const blockedUser = await User.findOne({ phone: normalizedBlockedPhone });
-    if (blockedUser) {
-      io.to(blockedUser._id.toString()).emit("blocked_update", {
-        blockerId: blockerId.toString(),
-        blocked: true,
-      });
-      console.log(`[blockUser] Emitted blocked_update to blockedId=${blockedId}, timestamp=${timestamp}`);
-    }
-
-    const contact = await Contact.findOne({ userId: blockerId, phone: normalizedBlockedPhone }).select("customName");
-    const customName = contact?.customName || null;
-    const blockedProfileFormatted = formatProfile(blockedProfile, blockedUser, customName);
-    return res.status(201).json({
-      success: true,
-      message: "User blocked successfully",
-      blockedProfile: blockedProfileFormatted,
-    });
-  } catch (err) {
-    console.error(`[blockUser] Error: ${err.message}, timestamp=${timestamp}`);
-    return res.status(500).json({ success: false, error: "Server error", details: err.message });
-  }
-});
-
-// DELETE /api/blocks/:blockedId - Unblock a user
-router.delete("/:blockedId", authenticateToken, async (req, res) => {
-  const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
-  try {
-    console.log(`[unblockUser] Processing request: blockedId=${req.params.blockedId}, userId=${req.user._id}, timestamp=${timestamp}`);
-    const blockerId = req.user._id;
-    const blockedId = req.params.blockedId;
-
-    if (!mongoose.isValidObjectId(blockedId)) {
-      console.error(`[unblockUser] Invalid blockedId format: ${blockedId}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Invalid blocked user ID" });
-    }
-
-    if (blockedId === blockerId.toString()) {
-      console.error(`[unblockUser] Self-unblocking attempted: userId=${blockerId}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Cannot unblock yourself" });
-    }
-
-    const result = await Block.deleteOne({ blockerId, blockedId });
-    if (result.deletedCount === 0) {
-      console.warn(`[unblockUser] Block not found: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
-      return res.status(404).json({ success: false, error: "Block not found" });
-    }
-
-    console.log(`[unblockUser] Block removed: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
-
-    const io = req.app.locals.io;
-    io.to(blockedId).emit("blocked_update", {
-      blockerId: blockerId.toString(),
-      blocked: false,
-    });
-    console.log(`[unblockUser] Emitted blocked_update to blockedId=${blockedId}, timestamp=${timestamp}`);
-
-    const blockedProfile = await Profile.findById(blockedId);
-    const blockedUser = await User.findById(blockedId);
-    const contact = await Contact.findOne({ userId: blockerId, phone: blockedProfile?.phone }).select("customName");
-    const customName = contact?.customName || null;
-    const blockedProfileFormatted = formatProfile(blockedProfile, blockedUser, customName);
-
-    return res.json({
-      success: true,
-      message: "User unblocked successfully",
-      blockedProfile: blockedProfileFormatted,
-    });
-  } catch (err) {
-    console.error(`[unblockUser] Error: ${err.message}, timestamp=${timestamp}`);
-    return res.status(500).json({ success: false, error: "Server error", details: err.message });
-  }
-});
-
-// GET /api/blocks - Get list of blocked users
+// GET /api/groups - Get all groups for the authenticated user
 router.get("/", authenticateToken, async (req, res) => {
   const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
   try {
-    console.log(`[getBlockedUsers] Processing request: userId=${req.user._id}, timestamp=${timestamp}`);
-    const blockerId = req.user._id;
+    console.log(`[getGroups] Processing request: userId=${req.user._id}, timestamp=${timestamp}`);
+    const userId = req.user._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
     if (page < 1 || limit < 1 || limit > 100) {
-      console.error(`[getBlockedUsers] Invalid pagination: page=${page}, limit=${limit}, timestamp=${timestamp}`);
+      console.error(`[getGroups] Invalid pagination: page=${page}, limit=${limit}, timestamp=${timestamp}`);
       return res.status(400).json({
         success: false,
         error: "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
       });
     }
 
-    const blocks = await Block.find({ blockerId })
+    // Find groups where the user is a member
+    const groups = await Group.find({ members: userId })
       .skip(skip)
       .limit(limit)
-      .populate("blockedId", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken");
-    console.log(`[getBlockedUsers] Found ${blocks.length} blocked users, timestamp=${timestamp}`);
+      .populate("members", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken")
+      .populate("admins", "phone displayName")
+      .populate("createdBy", "phone displayName")
+      .sort({ updatedAt: -1 });
 
-    const blockedUserIds = blocks.map((block) => block.blockedId._id.toString());
-    const users = await User.find({ _id: { $in: blockedUserIds } }).select("phone online lastSeen fcmToken");
-    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+    console.log(`[getGroups] Found ${groups.length} groups for userId=${userId}, timestamp=${timestamp}`);
 
-    const contacts = await Contact.find({
-      userId: blockerId,
-      phone: { $in: users.map((u) => u.phone) },
-    }).select("phone customName");
-    const contactMap = new Map(contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null]));
+    // Fetch blocked users to include block status
+    const blockedUsers = await Block.find({ blockerId: userId }).select("blockedId");
+    const blockedUserIds = new Set(blockedUsers.map(block => block.blockedId.toString()));
 
-    const blockedProfiles = blocks.map((block) => {
-      const blockedProfile = block.blockedId;
-      const blockedUser = userMap.get(blockedProfile._id.toString());
-      const customName = contactMap.get(normalizePhoneNumber(blockedProfile.phone));
-      return formatProfile(blockedProfile, blockedUser, customName);
-    });
+    // Fetch contacts for custom names
+    const phoneNumbers = groups.flatMap(group => group.members.map(member => normalizePhoneNumber(member.phone)));
+    const contacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    const contactMap = new Map(contacts.map(c => [normalizePhoneNumber(c.phone), c.customName || null]));
+
+    // Fetch user data for online/lastSeen status
+    const userIds = groups.flatMap(group => group.members.map(member => member._id));
+    const users = await User.find({ _id: { $in: userIds } }).select("phone online lastSeen fcmToken");
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
+    // Format group data
+    const formattedGroups = groups.map(group => ({
+      id: group._id,
+      name: group.name,
+      channelId: group.channelId || null,
+      pictureUrl: group.pictureUrl || null,
+      musicUrl: group.musicUrl || null,
+      createdAt: group.createdAt,
+      updatedAt: group.updatedAt,
+      createdBy: formatProfile(group.createdBy, userMap.get(group.createdBy?._id?.toString()), contactMap.get(normalizePhoneNumber(group.createdBy?.phone))),
+      admins: group.admins.map(admin => formatProfile(admin, userMap.get(admin._id.toString()), contactMap.get(normalizePhoneNumber(admin.phone)))),
+      members: group.members.map(member => {
+        const memberUser = userMap.get(member._id.toString());
+        return {
+          ...formatProfile(member, memberUser, contactMap.get(normalizePhoneNumber(member.phone))),
+          isBlocked: blockedUserIds.has(member._id.toString()),
+        };
+      }),
+    }));
 
     return res.json({
       success: true,
       page,
       limit,
-      total: await Block.countDocuments({ blockerId }),
-      blockedProfiles,
+      total: await Group.countDocuments({ members: userId }),
+      groups: formattedGroups,
     });
   } catch (err) {
-    console.error(`[getBlockedUsers] Error: ${err.message}, timestamp=${timestamp}`);
+    console.error(`[getGroups] Error: ${err.message}, timestamp=${timestamp}`);
     return res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 });
 
-// GET /api/blocks/status/:blockedId - Check block status
-router.get("/status/:blockedId", authenticateToken, async (req, res) => {
+// POST /api/groups - Create a new group
+router.post("/", authenticateToken, async (req, res) => {
   const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
   try {
-    console.log(`[checkBlockStatus] Processing request: blockedId=${req.params.blockedId}, userId=${req.user._id}, timestamp=${timestamp}`);
-    const blockerId = req.user._id;
-    const blockedId = req.params.blockedId;
+    console.log(`[createGroup] Processing request: body=${JSON.stringify(req.body)}, userId=${req.user._id}, timestamp=${timestamp}`);
+    const { name, memberPhones, pictureUrl, musicUrl } = req.body;
+    const userId = req.user._id;
 
-    if (!mongoose.isValidObjectId(blockedId)) {
-      console.error(`[checkBlockStatus] Invalid blockedId format: ${blockedId}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Invalid blocked user ID" });
+    if (!name?.trim() || name.length < 3) {
+      console.error(`[createGroup] Invalid group name: ${name}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Group name must be at least 3 characters" });
     }
 
-    if (blockedId === blockerId.toString()) {
-      console.error(`[checkBlockStatus] Self-check attempted: userId=${blockerId}, timestamp=${timestamp}`);
-      return res.status(400).json({ success: false, error: "Cannot check block status for yourself" });
+    if (!Array.isArray(memberPhones) || memberPhones.length === 0) {
+      console.error(`[createGroup] Invalid memberPhones: ${memberPhones}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "At least one member phone number is required" });
     }
 
-    const block = await Block.findOne({ blockerId, blockedId });
-    console.log(`[checkBlockStatus] Block ${block ? "found" : "not found"}: blockerId=${blockerId}, blockedId=${blockedId}, timestamp=${timestamp}`);
+    // Normalize and validate phone numbers
+    const normalizedPhones = memberPhones.map(phone => normalizePhoneNumber(phone));
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+    const invalidPhones = normalizedPhones.filter(phone => !phoneRegex.test(phone));
+    if (invalidPhones.length > 0) {
+      console.error(`[createGroup] Invalid phone numbers: ${invalidPhones}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Invalid phone numbers", invalidPhones });
+    }
+
+    // Fetch profiles for members
+    const profiles = await Profile.find({ phone: { $in: normalizedPhones } });
+    const profileMap = new Map(profiles.map(p => [normalizePhoneNumber(p.phone), p]));
+    const missingPhones = normalizedPhones.filter(phone => !profileMap.has(phone));
+    if (missingPhones.length > 0) {
+      console.error(`[createGroup] Profiles not found for phones: ${missingPhones}, timestamp=${timestamp}`);
+      return res.status(404).json({ success: false, error: "Some users not found", missingPhones });
+    }
+
+    // Check for blocked users
+    const blockedUsers = await Block.find({ blockerId: userId, blockedId: { $in: profiles.map(p => p._id) } });
+    if (blockedUsers.length > 0) {
+      console.error(`[createGroup] Cannot add blocked users: ${blockedUsers.map(b => b.blockedId)}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Cannot add blocked users to group" });
+    }
+
+    // Create group
+    const group = new Group({
+      name: name.trim(),
+      createdBy: userId,
+      members: [userId, ...profiles.map(p => p._id)],
+      admins: [userId],
+      pictureUrl: pictureUrl || null,
+      musicUrl: musicUrl || null,
+    });
+    await group.save();
+    console.log(`[createGroup] Group created: groupId=${group._id}, timestamp=${timestamp}`);
+
+    // Populate group data for response
+    const populatedGroup = await Group.findById(group._id)
+      .populate("members", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken")
+      .populate("admins", "phone displayName")
+      .populate("createdBy", "phone displayName");
+
+    // Fetch contacts and users for formatting
+    const phoneNumbers = populatedGroup.members.map(member => normalizePhoneNumber(member.phone));
+    const contacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    const contactMap = new Map(contacts.map(c => [normalizePhoneNumber(c.phone), c.customName || null]));
+    const userIds = populatedGroup.members.map(member => member._id);
+    const users = await User.find({ _id: { $in: userIds } }).select("phone online lastSeen fcmToken");
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
+    // Format response
+    const formattedGroup = {
+      id: populatedGroup._id,
+      name: populatedGroup.name,
+      channelId: populatedGroup.channelId || null,
+      pictureUrl: populatedGroup.pictureUrl || null,
+      musicUrl: populatedGroup.musicUrl || null,
+      createdAt: populatedGroup.createdAt,
+      updatedAt: populatedGroup.updatedAt,
+      createdBy: formatProfile(populatedGroup.createdBy, userMap.get(populatedGroup.createdBy?._id?.toString()), contactMap.get(normalizePhoneNumber(populatedGroup.createdBy?.phone))),
+      admins: populatedGroup.admins.map(admin => formatProfile(admin, userMap.get(admin._id.toString()), contactMap.get(normalizePhoneNumber(admin.phone)))),
+      members: populatedGroup.members.map(member => {
+        const memberUser = userMap.get(member._id.toString());
+        return {
+          ...formatProfile(member, memberUser, contactMap.get(normalizePhoneNumber(member.phone))),
+          isBlocked: blockedUsers.some(b => b.blockedId.toString() === member._id.toString()),
+        };
+      }),
+    };
+
+    // Emit Socket.IO event for group creation
+    const io = req.app.locals.io;
+    populatedGroup.members.forEach(member => {
+      io.to(member._id.toString()).emit("group_update", {
+        groupId: group._id,
+        action: "created",
+        group: formattedGroup,
+      });
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Group created successfully",
+      group: formattedGroup,
+    });
+  } catch (err) {
+    console.error(`[createGroup] Error: ${err.message}, timestamp=${timestamp}`);
+    return res.status(500).json({ success: false, error: "Server error", details: err.message });
+  }
+});
+
+// PUT /api/groups/:groupId/members - Add members to a group
+router.put("/:groupId/members", authenticateToken, async (req, res) => {
+  const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
+  try {
+    console.log(`[addGroupMembers] Processing request: groupId=${req.params.groupId}, body=${JSON.stringify(req.body)}, userId=${req.user._id}, timestamp=${timestamp}`);
+    const { groupId } = req.params;
+    const { memberPhones } = req.body;
+    const userId = req.user._id;
+
+    if (!mongoose.isValidObjectId(groupId)) {
+      console.error(`[addGroupMembers] Invalid groupId: ${groupId}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Invalid group ID" });
+    }
+
+    if (!Array.isArray(memberPhones) || memberPhones.length === 0) {
+      console.error(`[addGroupMembers] Invalid memberPhones: ${memberPhones}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "At least one member phone number is required" });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      console.error(`[addGroupMembers] Group not found: groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(404).json({ success: false, error: "Group not found" });
+    }
+
+    if (!group.admins.includes(userId)) {
+      console.error(`[addGroupMembers] User not admin: userId=${userId}, groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(403).json({ success: false, error: "Only admins can add members" });
+    }
+
+    // Normalize and validate phone numbers
+    const normalizedPhones = memberPhones.map(phone => normalizePhoneNumber(phone));
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+    const invalidPhones = normalizedPhones.filter(phone => !phoneRegex.test(phone));
+    if (invalidPhones.length > 0) {
+      console.error(`[addGroupMembers] Invalid phone numbers: ${invalidPhones}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Invalid phone numbers", invalidPhones });
+    }
+
+    // Fetch profiles
+    const profiles = await Profile.find({ phone: { $in: normalizedPhones } });
+    const profileMap = new Map(profiles.map(p => [normalizePhoneNumber(p.phone), p]));
+    const missingPhones = normalizedPhones.filter(phone => !profileMap.has(phone));
+    if (missingPhones.length > 0) {
+      console.error(`[addGroupMembers] Profiles not found for phones: ${missingPhones}, timestamp=${timestamp}`);
+      return res.status(404).json({ success: false, error: "Some users not found", missingPhones });
+    }
+
+    // Check for blocked users
+    const blockedUsers = await Block.find({ blockerId: userId, blockedId: { $in: profiles.map(p => p._id) } });
+    if (blockedUsers.length > 0) {
+      console.error(`[addGroupMembers] Cannot add blocked users: ${blockedUsers.map(b => b.blockedId)}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Cannot add blocked users to group" });
+    }
+
+    // Add new members
+    const newMemberIds = profiles.map(p => p._id).filter(id => !group.members.includes(id));
+    if (newMemberIds.length === 0) {
+      console.warn(`[addGroupMembers] No new members to add: groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "All users are already members" });
+    }
+
+    group.members.push(...newMemberIds);
+    group.updatedAt = new Date();
+    await group.save();
+
+    // Populate group data for response
+    const populatedGroup = await Group.findById(groupId)
+      .populate("members", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken")
+      .populate("admins", "phone displayName")
+      .populate("createdBy", "phone displayName");
+
+    // Fetch contacts and users
+    const phoneNumbers = populatedGroup.members.map(member => normalizePhoneNumber(member.phone));
+    const contacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    const contactMap = new Map(contacts.map(c => [normalizePhoneNumber(c.phone), c.customName || null]));
+    const userIds = populatedGroup.members.map(member => member._id);
+    const users = await User.find({ _id: { $in: userIds } }).select("phone online lastSeen fcmToken");
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
+    // Format response
+    const formattedGroup = {
+      id: populatedGroup._id,
+      name: populatedGroup.name,
+      channelId: populatedGroup.channelId || null,
+      pictureUrl: populatedGroup.pictureUrl || null,
+      musicUrl: populatedGroup.musicUrl || null,
+      createdAt: populatedGroup.createdAt,
+      updatedAt: populatedGroup.updatedAt,
+      createdBy: formatProfile(populatedGroup.createdBy, userMap.get(populatedGroup.createdBy?._id?.toString()), contactMap.get(normalizePhoneNumber(populatedGroup.createdBy?.phone))),
+      admins: populatedGroup.admins.map(admin => formatProfile(admin, userMap.get(admin._id.toString()), contactMap.get(normalizePhoneNumber(admin.phone)))),
+      members: populatedGroup.members.map(member => {
+        const memberUser = userMap.get(member._id.toString());
+        return {
+          ...formatProfile(member, memberUser, contactMap.get(normalizePhoneNumber(member.phone))),
+          isBlocked: blockedUsers.some(b => b.blockedId.toString() === member._id.toString()),
+        };
+      }),
+    };
+
+    // Emit Socket.IO event
+    const io = req.app.locals.io;
+    newMemberIds.forEach(memberId => {
+      io.to(memberId.toString()).emit("group_update", {
+        groupId: group._id,
+        action: "member_added",
+        group: formattedGroup,
+      });
+    });
 
     return res.json({
       success: true,
-      isBlocked: !!block,
-      blockedId,
+      message: "Members added successfully",
+      group: formattedGroup,
     });
   } catch (err) {
-    console.error(`[checkBlockStatus] Error: ${err.message}, timestamp=${timestamp}`);
+    console.error(`[addGroupMembers] Error: ${err.message}, timestamp=${timestamp}`);
+    return res.status(500).json({ success: false, error: "Server error", details: err.message });
+  }
+});
+
+// DELETE /api/groups/:groupId/members/:memberId - Remove a member from a group
+router.delete("/:groupId/members/:memberId", authenticateToken, async (req, res) => {
+  const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
+  try {
+    console.log(`[removeGroupMember] Processing request: groupId=${req.params.groupId}, memberId=${req.params.memberId}, userId=${req.user._id}, timestamp=${timestamp}`);
+    const { groupId, memberId } = req.params;
+    const userId = req.user._id;
+
+    if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(memberId)) {
+      console.error(`[removeGroupMember] Invalid ID: groupId=${groupId}, memberId=${memberId}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Invalid group or member ID" });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      console.error(`[removeGroupMember] Group not found: groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(404).json({ success: false, error: "Group not found" });
+    }
+
+    if (!group.admins.includes(userId)) {
+      console.error(`[removeGroupMember] User not admin: userId=${userId}, groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(403).json({ success: false, error: "Only admins can remove members" });
+    }
+
+    if (!group.members.includes(memberId)) {
+      console.error(`[removeGroupMember] Member not in group: memberId=${memberId}, groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "User is not a member of this group" });
+    }
+
+    if (group.createdBy.toString() === memberId) {
+      console.error(`[removeGroupMember] Cannot remove group creator: memberId=${memberId}, groupId=${groupId}, timestamp=${timestamp}`);
+      return res.status(400).json({ success: false, error: "Cannot remove group creator" });
+    }
+
+    group.members = group.members.filter(id => id.toString() !== memberId);
+    if (group.admins.includes(memberId)) {
+      group.admins = group.admins.filter(id => id.toString() !== memberId);
+    }
+    group.updatedAt = new Date();
+    await group.save();
+
+    // Populate group data for response
+    const populatedGroup = await Group.findById(groupId)
+      .populate("members", "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken")
+      .populate("admins", "phone displayName")
+      .populate("createdBy", "phone displayName");
+
+    // Fetch contacts and users
+    const phoneNumbers = populatedGroup.members.map(member => normalizePhoneNumber(member.phone));
+    const contacts = await Contact.find({ userId, phone: { $in: phoneNumbers } }).select("phone customName");
+    const contactMap = new Map(contacts.map(c => [normalizePhoneNumber(c.phone), c.customName || null]));
+    const userIds = populatedGroup.members.map(member => member._id);
+    const users = await User.find({ _id: { $in: userIds } }).select("phone online lastSeen fcmToken");
+    const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
+    // Format response
+    const formattedGroup = {
+      id: populatedGroup._id,
+      name: populatedGroup.name,
+      channelId: populatedGroup.channelId || null,
+      pictureUrl: populatedGroup.pictureUrl || null,
+      musicUrl: populatedGroup.musicUrl || null,
+      createdAt: populatedGroup.createdAt,
+      updatedAt: populatedGroup.updatedAt,
+      createdBy: formatProfile(populatedGroup.createdBy, userMap.get(populatedGroup.createdBy?._id?.toString()), contactMap.get(normalizePhoneNumber(populatedGroup.createdBy?.phone))),
+      admins: populatedGroup.admins.map(admin => formatProfile(admin, userMap.get(admin._id.toString()), contactMap.get(normalizePhoneNumber(admin.phone)))),
+      members: populatedGroup.members.map(member => {
+        const memberUser = userMap.get(member._id.toString());
+        return {
+          ...formatProfile(member, memberUser, contactMap.get(normalizePhoneNumber(member.phone))),
+          isBlocked: false, // No need to check blocked status here
+        };
+      }),
+    };
+
+    // Emit Socket.IO event
+    const io = req.app.locals.io;
+    io.to(memberId).emit("group_update", {
+      groupId: group._id,
+      action: "member_removed",
+      group: formattedGroup,
+    });
+
+    return res.json({
+      success: true,
+      message: "Member removed successfully",
+      group: formattedGroup,
+    });
+  } catch (err) {
+    console.error(`[removeGroupMember] Error: ${err.message}, timestamp=${timestamp}`);
     return res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 });
