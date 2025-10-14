@@ -99,81 +99,7 @@ export const initGroupSocket = (server) => {
         socket.disconnect();
       }
     });
-    // socket.on("create_group", async (data, callback) => {
-    //   console.log(
-    //     `[CREATE_GROUP] Attempting to create group (NO AUTH): data=${JSON.stringify(
-    //       data
-    //     )}`
-    //   );
-
-    //   try {
-    //     const { name, channelId, members = [], musicUrl, pictureUrl } = data;
-
-    //     // 🔥 Hardcoded creator ID for testing — no auth, no socket.userId
-    //     const userId = "68e12bcbdee26bec7660c64c"; // any valid ObjectId string
-
-    //     if (!name || name.trim().length < 3) {
-    //       return callback({
-    //         success: false,
-    //         message: "Group name must be at least 3 characters",
-    //       });
-    //     }
-
-    //     if (channelId && !isValidObjectId(channelId)) {
-    //       return callback({ success: false, message: "Invalid channel ID" });
-    //     }
-
-    //     if (channelId) {
-    //       const channel = await Channel.findById(channelId);
-    //       if (!channel) {
-    //         return callback({ success: false, message: "Channel not found" });
-    //       }
-    //     }
-
-    //     if (musicUrl && !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(musicUrl)) {
-    //       return callback({
-    //         success: false,
-    //         message: "Invalid music URL format",
-    //       });
-    //     }
-    //     if (
-    //       pictureUrl &&
-    //       !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)
-    //     ) {
-    //       return callback({
-    //         success: false,
-    //         message: "Invalid picture URL format",
-    //       });
-    //     }
-    //     if (!members.every(isValidObjectId)) {
-    //       return callback({ success: false, message: "Invalid member IDs" });
-    //     }
-
-    //     // 🔥 Skip member existence check — allow any ObjectId
-    //     const group = new Group({
-    //       name,
-    //       channelId: channelId || null,
-    //       createdBy: userId,
-    //       members: [...new Set([userId, ...members])],
-    //       musicUrl: musicUrl || null,
-    //       pictureUrl: pictureUrl || null,
-    //     });
-
-    //     await group.save();
-    //     console.log(`[CREATE_GROUP] Group created: ${group._id}`);
-
-    //     // Optional: join room (won't notify others without onlineUsers map)
-    //     const groupRoom = `group_${group._id}`;
-    //     socket.join(groupRoom);
-
-    //     callback({ success: true, group: group.toObject() });
-    //     console.log(`[CREATE_GROUP_SUCCESS] Group created successfully`);
-    //   } catch (error) {
-    //     console.error(`[CREATE_GROUP_ERROR] ${error.message}`);
-    //     callback({ success: false, message: "Server error" });
-    //   }
-    // });
-    /** Create a new group with optional channel, music, and picture */
+ 
     socket.on("create_group", async (data, callback) => {
       console.log(
         `[CREATE_GROUP] Attempting to create group: userId=${
@@ -1052,7 +978,7 @@ export const initGroupSocket = (server) => {
     });
 
     
-    //   console.log(`[SEND_TEXT_MESSAGE] Payload debug: socket.userId="${socket.userId}" (type: ${typeof socket.userId}), data=${JSON.stringify(data)}`);
+   
 
     //   try {
     //     const { groupId, content } = data;
@@ -1367,7 +1293,9 @@ export const initGroupSocket = (server) => {
       }
     });
 
-    /** Get group messages with pagination */
+
+
+
     socket.on("get_group_messages", async (data, callback) => {
       console.log(
         `[GET_GROUP_MESSAGES] Fetching messages: userId=${
@@ -1419,7 +1347,6 @@ export const initGroupSocket = (server) => {
         );
 
         const unreadMessages = messages.filter((msg) => {
-          // 🔒 SAFETY: Skip messages with missing or null senderId
           if (!msg.senderId) {
             console.warn(
               `[GET_GROUP_MESSAGES] Skipping message with null senderId: ${msg._id}`
@@ -1538,7 +1465,6 @@ export const initGroupSocket = (server) => {
       }
     });
 
-    /** Join group room for real-time messaging */
     socket.on("join_group_room", async ({ groupId }) => {
       console.log(
         `[JOIN_GROUP_ROOM] Attempting to join room: userId=${socket.userId}, groupId=${groupId}`
@@ -1599,7 +1525,6 @@ export const initGroupSocket = (server) => {
         const group = await Group.findById(groupId);
         if (!group) return;
 
-        // Emit to group room (efficient, since members are already joined)
         const groupRoom = `group_${groupId}`;
         socket
           .to(groupRoom)
@@ -1610,8 +1535,6 @@ export const initGroupSocket = (server) => {
       }
     });
 
-    /** Send media message (images/videos/files) to group */
-    // socket.on("send_media", async ({ senderId, groupId, files }, callback) => {
     //   console.log(
     //     `[SEND_MEDIA] Attempting to send media: userId=${
     //       socket.userId
@@ -1745,163 +1668,362 @@ export const initGroupSocket = (server) => {
     //     ack(`Server error: ${err.message}`);
     //   }
     // });
+    // socket.on("send_media", async (payload, callback) => {
+    //   console.log(
+    //     `[SEND_MEDIA] Exact payload received:`,
+    //     JSON.stringify(payload, null, 2)
+    //   );
+    //   console.log(
+    //     `[SEND_MEDIA] socket.userId="${
+    //       socket.userId
+    //     }" (type: ${typeof socket.userId})`
+    //   );
 
-    /** Send media message – FIXED for groupId & senderId */
+    //   const { groupId, files } = payload; 
+    //   const ack =
+    //     callback || ((err) => socket.emit("media_error", { error: err }));
+
+    //   try {
+    //     let senderId = socket.userId;
+    //     // if (
+    //     //   !senderId ||
+    //     //   typeof senderId !== "string" ||
+    //     //   !isValidObjectId(senderId)
+    //     // ) {
+    //     //   console.error(`[SEND_MEDIA_ERROR] Invalid senderId: "${senderId}"`);
+    //     //   return ack("Invalid sender – join groups first");
+    //     // }
+    //     senderId = new mongoose.Types.ObjectId(senderId);
+    //     console.log(`[SEND_MEDIA] Casted senderId: ${senderId.toString()}`);
+
+    //     // 👈 STEP 2: groupId validation (with fallback log)
+    //     if (!groupId) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] MISSING groupId in payload! Full payload was:`,
+    //         JSON.stringify(payload)
+    //       );
+    //       return ack(
+    //         "No group ID provided – select a group and include { groupId: '...' } in emit"
+    //       );
+    //     }
+    //     if (!isValidObjectId(groupId)) {
+    //       console.error(`[SEND_MEDIA_ERROR] Invalid groupId: "${groupId}"`);
+    //       return ack("Invalid group ID format");
+    //     }
+    //     const castGroupId = new mongoose.Types.ObjectId(groupId);
+    //     console.log(`[SEND_MEDIA] Casted groupId: ${castGroupId.toString()}`);
+
+    //     if (
+    //       !files ||
+    //       !Array.isArray(files) ||
+    //       files.length === 0 ||
+    //       files.length > 10
+    //     ) {
+    //       return ack("Files must be 1-10 items array");
+    //     }
+    //     for (let i = 0; i < files.length; i++) {
+    //       const file = files[i];
+    //       const { type, url, fileType, duration = 0, fileName } = file;
+    //       if (!["image", "video", "file"].includes(type))
+    //         return ack(`Invalid type at ${i}: ${type}`);
+    //       if (!url || typeof url !== "string" || !url.trim())
+    //         return ack(`Invalid URL at ${i}`);
+    //       if (!fileType || typeof fileType !== "string")
+    //         return ack(`Invalid MIME at ${i}: ${fileType}`);
+    //       if (type === "image" && !fileType.startsWith("image/"))
+    //         return ack(`Bad image MIME: ${fileType}`);
+    //       if (type === "video" && !fileType.startsWith("video/"))
+    //         return ack(`Bad video MIME: ${fileType}`);
+    //       if (
+    //         type === "video" &&
+    //         (typeof duration !== "number" || duration < 1 || duration > 300)
+    //       )
+    //         return ack("Video max 5 min");
+    //       if (type === "file" && (!fileName || typeof fileName !== "string"))
+    //         return ack("Files need name");
+    //       console.log(
+    //         `[SEND_MEDIA] File ${i} valid: ${type}, url=${url.substring(
+    //           0,
+    //           50
+    //         )}...`
+    //       );
+    //     }
+
+    //     // Group & membership check
+    //     const group = await Group.findById(castGroupId);
+    //     if (!group) return ack("Group not found");
+    //     const isMember = group.members.some((id) => id.equals(senderId));
+    //     if (!isMember) return ack("Not a group member");
+
+    //     // Create chats
+    //     const chats = [];
+    //     for (const file of files) {
+    //       const { type, url, fileType, duration = 0, fileName } = file;
+    //       const chat = new Chat({
+    //         senderId,
+    //         groupId: castGroupId,
+    //         type,
+    //         content: url,
+    //         fileType,
+    //         fileName: type === "file" ? fileName : undefined,
+    //         duration: type === "video" ? duration : 0,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+    //       await chat.save();
+    //       await chat.populate("senderId", "displayName");
+    //       if (!chat.senderId || !chat.senderId._id) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Populate failed for ${chat._id} – deleting`
+    //         );
+    //         await Chat.findByIdAndDelete(chat._id);
+    //         return ack("Sender not found");
+    //       }
+    //       chats.push(chat);
+    //       console.log(`[SEND_MEDIA] Saved chat ${chat._id}: ${type}`);
+    //     }
+
+    //     // Payload for emit/response
+    //     const responsePayload = chats.map((chat) => ({
+    //       id: chat._id.toString(),
+    //       senderId: chat.senderId.toString(),
+    //       groupId: chat.groupId.toString(),
+    //       content: chat.content,
+    //       type: chat.type,
+    //       fileType: chat.fileType,
+    //       fileName: chat.fileName,
+    //       duration: chat.duration,
+    //       timestamp: chat.createdAt,
+    //       status: chat.status,
+    //       displayName: chat.senderId.displayName,
+    //     }));
+
+    //     const groupRoom = `group_${groupId}`;
+    //     io.to(groupRoom).emit("new_media_message", responsePayload);
+
+    //     setTimeout(async () => {
+    //       await Chat.updateMany(
+    //         { _id: { $in: chats.map((c) => c._id) } },
+    //         { status: "delivered" }
+    //       );
+    //       io.to(groupRoom).emit("message_status_update", {
+    //         messageIds: chats.map((c) => c._id),
+    //         status: "delivered",
+    //       });
+    //     }, 100);
+
+    //     ack(null, { success: true, messages: responsePayload });
+    //     console.log(
+    //       `[SEND_MEDIA_SUCCESS] Sent ${chats.length} files to ${groupId}`
+    //     );
+    //   } catch (error) {
+    //     console.error(`[SEND_MEDIA_ERROR] Full error: ${error.message}`);
+    //     ack(`Server error: ${error.message}`);
+    //   }
+    // });
+
+
     socket.on("send_media", async (payload, callback) => {
-      // 👈 STEP 1: Log EXACT payload (helps debug client emit)
-      console.log(
-        `[SEND_MEDIA] Exact payload received:`,
-        JSON.stringify(payload, null, 2)
-      );
-      console.log(
-        `[SEND_MEDIA] socket.userId="${
-          socket.userId
-        }" (type: ${typeof socket.userId})`
-      );
+  const timestamp = new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
+  console.log(
+    `[SEND_MEDIA] Exact payload received: ${JSON.stringify(payload, null, 2)}, ` +
+    `socket.userId="${socket.userId}" (type: ${typeof socket.userId}), ` +
+    `timestamp=${timestamp}`
+  );
 
-      const { groupId, files } = payload; // Ignore senderId from payload (use socket)
-      const ack =
-        callback || ((err) => socket.emit("media_error", { error: err }));
+  const { groupId, files } = payload;
+  const ack = callback || ((err) => socket.emit("media_error", { error: err }));
 
+  try {
+    // Step 1: Validate senderId
+    const senderIdStr = socket.userId;
+    if (!senderIdStr || typeof senderIdStr !== "string" || !isValidObjectId(senderIdStr)) {
+      console.error(
+        `[SEND_MEDIA_ERROR] Invalid senderId: "${senderIdStr}" (type: ${typeof senderIdStr}), ` +
+        `socketId=${socket.id}, timestamp=${timestamp}`
+      );
+      return ack("Invalid sender – please join groups first");
+    }
+    const senderId = new mongoose.Types.ObjectId(senderIdStr);
+    console.log(`[SEND_MEDIA] Casted senderId: ${senderId.toString()}, timestamp=${timestamp}`);
+
+    // Step 2: Validate groupId
+    if (!groupId) {
+      console.error(
+        `[SEND_MEDIA_ERROR] MISSING groupId in payload! Full payload: ${JSON.stringify(payload)}, ` +
+        `timestamp=${timestamp}`
+      );
+      return ack("No group ID provided – select a group and include { groupId: '...' } in emit");
+    }
+    if (!isValidObjectId(groupId)) {
+      console.error(`[SEND_MEDIA_ERROR] Invalid groupId: "${groupId}", timestamp=${timestamp}`);
+      return ack("Invalid group ID format");
+    }
+    const castGroupId = new mongoose.Types.ObjectId(groupId);
+    console.log(`[SEND_MEDIA] Casted groupId: ${castGroupId.toString()}, timestamp=${timestamp}`);
+
+    // Step 3: Validate files
+    if (!files || !Array.isArray(files) || files.length === 0 || files.length > 10) {
+      console.error(
+        `[SEND_MEDIA_ERROR] Invalid files array: length=${files?.length || 0}, ` +
+        `timestamp=${timestamp}`
+      );
+      return ack("Files must be a non-empty array (1-10 items)");
+    }
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const { type, url, fileType, duration = 0, fileName } = file;
+      if (!["image", "video", "file"].includes(type)) {
+        console.error(`[SEND_MEDIA_ERROR] Invalid type at index ${i}: ${type}, timestamp=${timestamp}`);
+        return ack(`Invalid file type at index ${i}: ${type}`);
+      }
+      if (!url || typeof url !== "string" || !url.trim()) {
+        console.error(`[SEND_MEDIA_ERROR] Invalid URL at index ${i}: ${url}, timestamp=${timestamp}`);
+        return ack(`Invalid URL at index ${i}`);
+      }
+      if (!fileType || typeof fileType !== "string") {
+        console.error(
+          `[SEND_MEDIA_ERROR] Invalid MIME type at index ${i}: ${fileType}, timestamp=${timestamp}`
+        );
+        return ack(`Invalid MIME type at index ${i}: ${fileType}`);
+      }
+      if (type === "image" && !fileType.startsWith("image/")) {
+        console.error(
+          `[SEND_MEDIA_ERROR] Bad image MIME at index ${i}: ${fileType}, timestamp=${timestamp}`
+        );
+        return ack(`Invalid MIME type for image: ${fileType}`);
+      }
+      if (type === "video" && !fileType.startsWith("video/") && fileType !== "application/octet-stream") {
+        console.error(
+          `[SEND_MEDIA_ERROR] Bad video MIME at index ${i}: ${fileType}, timestamp=${timestamp}`
+        );
+        return ack(`Invalid MIME type for video: ${fileType}`);
+      }
+      if (type === "video" && (typeof duration !== "number" || duration < 1 || duration > 300)) {
+        console.warn(
+          `[SEND_MEDIA_WARN] Invalid video duration at index ${i}: ${duration}, proceeding without duration, timestamp=${timestamp}`
+        );
+        file.duration = 0; // Reset to 0 for invalid duration
+      }
+      if (type === "file" && (!fileName || typeof fileName !== "string")) {
+        console.error(
+          `[SEND_MEDIA_ERROR] Missing fileName for file at index ${i}, timestamp=${timestamp}`
+        );
+        return ack("Documents must have a file name");
+      }
+      console.log(
+        `[SEND_MEDIA] File ${i} valid: type=${type}, url=${url.substring(0, 50)}..., timestamp=${timestamp}`
+      );
+    }
+
+    // Step 4: Verify group and membership
+    const group = await Group.findById(castGroupId);
+    if (!group) {
+      console.error(`[SEND_MEDIA_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`);
+      return ack("Group not found");
+    }
+    const isMember = group.members.some((id) => id.equals(senderId));
+    if (!isMember) {
+      console.error(
+        `[SEND_MEDIA_ERROR] Sender not a member: senderId=${senderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+      );
+      return ack("Not a group member");
+    }
+
+    // Step 5: Verify sender profile
+    const senderProfile = await Profile.findById(senderId).select("displayName");
+    if (!senderProfile) {
+      console.error(
+        `[SEND_MEDIA_ERROR] Sender profile not found: senderId=${senderId}, timestamp=${timestamp}`
+      );
+      return ack("Sender profile not found");
+    }
+
+    // Step 6: Create and save chat documents
+    const chats = [];
+    for (const file of files) {
+      const { type, url, fileType, duration = 0, fileName } = file;
+      const chat = new Chat({
+        senderId,
+        groupId: castGroupId,
+        type,
+        content: url,
+        fileType,
+        fileName: type === "file" ? fileName : undefined,
+        duration: type === "video" ? duration : 0,
+        status: "sent",
+        deletedFor: [],
+      });
+      await chat.save();
+      await chat.populate("senderId", "displayName");
+      if (!chat.senderId || !chat.senderId._id) {
+        console.error(
+          `[SEND_MEDIA_ERROR] Populate failed for chat ${chat._id} – deleting, timestamp=${timestamp}`
+        );
+        await Chat.findByIdAndDelete(chat._id);
+        return ack("Sender profile not found after save");
+      }
+      chats.push(chat);
+      console.log(
+        `[SEND_MEDIA] Saved chat: id=${chat._id}, type=${type}, timestamp=${timestamp}`
+      );
+    }
+
+    // Step 7: Prepare response payload
+    const responsePayload = chats.map((chat) => ({
+      id: chat._id.toString(),
+      senderId: chat.senderId._id.toString(),
+      groupId: chat.groupId.toString(),
+      content: chat.content,
+      type: chat.type,
+      fileType: chat.fileType,
+      fileName: chat.fileName,
+      duration: chat.duration,
+      timestamp: chat.createdAt.toISOString(),
+      status: chat.status,
+      displayName: chat.senderId.displayName,
+    }));
+
+    // Step 8: Emit to group room
+    const groupRoom = `group_${castGroupId}`;
+    io.to(groupRoom).emit("new_media_message", responsePayload);
+    console.log(
+      `[SEND_MEDIA] Emitted new_media_message to groupRoom=${groupRoom}, timestamp=${timestamp}`
+    );
+
+    // Step 9: Update status to delivered
+    setTimeout(async () => {
       try {
-        let senderId = socket.userId;
-        // if (
-        //   !senderId ||
-        //   typeof senderId !== "string" ||
-        //   !isValidObjectId(senderId)
-        // ) {
-        //   console.error(`[SEND_MEDIA_ERROR] Invalid senderId: "${senderId}"`);
-        //   return ack("Invalid sender – join groups first");
-        // }
-        senderId = new mongoose.Types.ObjectId(senderId);
-        console.log(`[SEND_MEDIA] Casted senderId: ${senderId.toString()}`);
-
-        // 👈 STEP 2: groupId validation (with fallback log)
-        if (!groupId) {
-          console.error(
-            `[SEND_MEDIA_ERROR] MISSING groupId in payload! Full payload was:`,
-            JSON.stringify(payload)
-          );
-          return ack(
-            "No group ID provided – select a group and include { groupId: '...' } in emit"
-          );
-        }
-        if (!isValidObjectId(groupId)) {
-          console.error(`[SEND_MEDIA_ERROR] Invalid groupId: "${groupId}"`);
-          return ack("Invalid group ID format");
-        }
-        const castGroupId = new mongoose.Types.ObjectId(groupId);
-        console.log(`[SEND_MEDIA] Casted groupId: ${castGroupId.toString()}`);
-
-        // Files validation
-        if (
-          !files ||
-          !Array.isArray(files) ||
-          files.length === 0 ||
-          files.length > 10
-        ) {
-          return ack("Files must be 1-10 items array");
-        }
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const { type, url, fileType, duration = 0, fileName } = file;
-          if (!["image", "video", "file"].includes(type))
-            return ack(`Invalid type at ${i}: ${type}`);
-          if (!url || typeof url !== "string" || !url.trim())
-            return ack(`Invalid URL at ${i}`);
-          if (!fileType || typeof fileType !== "string")
-            return ack(`Invalid MIME at ${i}: ${fileType}`);
-          if (type === "image" && !fileType.startsWith("image/"))
-            return ack(`Bad image MIME: ${fileType}`);
-          if (type === "video" && !fileType.startsWith("video/"))
-            return ack(`Bad video MIME: ${fileType}`);
-          if (
-            type === "video" &&
-            (typeof duration !== "number" || duration < 1 || duration > 300)
-          )
-            return ack("Video max 5 min");
-          if (type === "file" && (!fileName || typeof fileName !== "string"))
-            return ack("Files need name");
-          console.log(
-            `[SEND_MEDIA] File ${i} valid: ${type}, url=${url.substring(
-              0,
-              50
-            )}...`
-          );
-        }
-
-        // Group & membership check
-        const group = await Group.findById(castGroupId);
-        if (!group) return ack("Group not found");
-        const isMember = group.members.some((id) => id.equals(senderId));
-        if (!isMember) return ack("Not a group member");
-
-        // Create chats
-        const chats = [];
-        for (const file of files) {
-          const { type, url, fileType, duration = 0, fileName } = file;
-          const chat = new Chat({
-            senderId,
-            groupId: castGroupId,
-            type,
-            content: url,
-            fileType,
-            fileName: type === "file" ? fileName : undefined,
-            duration: type === "video" ? duration : 0,
-            status: "sent",
-            deletedFor: [],
-          });
-          await chat.save();
-          await chat.populate("senderId", "displayName");
-          if (!chat.senderId || !chat.senderId._id) {
-            console.error(
-              `[SEND_MEDIA_ERROR] Populate failed for ${chat._id} – deleting`
-            );
-            await Chat.findByIdAndDelete(chat._id);
-            return ack("Sender not found");
-          }
-          chats.push(chat);
-          console.log(`[SEND_MEDIA] Saved chat ${chat._id}: ${type}`);
-        }
-
-        // Payload for emit/response
-        const responsePayload = chats.map((chat) => ({
-          id: chat._id.toString(),
-          senderId: chat.senderId.toString(),
-          groupId: chat.groupId.toString(),
-          content: chat.content,
-          type: chat.type,
-          fileType: chat.fileType,
-          fileName: chat.fileName,
-          duration: chat.duration,
-          timestamp: chat.createdAt,
-          status: chat.status,
-          displayName: chat.senderId.displayName,
-        }));
-
-        const groupRoom = `group_${groupId}`;
-        io.to(groupRoom).emit("new_media_message", responsePayload);
-
-        setTimeout(async () => {
-          await Chat.updateMany(
-            { _id: { $in: chats.map((c) => c._id) } },
-            { status: "delivered" }
-          );
-          io.to(groupRoom).emit("message_status_update", {
-            messageIds: chats.map((c) => c._id),
-            status: "delivered",
-          });
-        }, 100);
-
-        ack(null, { success: true, messages: responsePayload });
+        await Chat.updateMany(
+          { _id: { $in: chats.map((c) => c._id) } },
+          { status: "delivered" }
+        );
+        io.to(groupRoom).emit("message_status_update", {
+          messageIds: chats.map((c) => c._id.toString()),
+          status: "delivered",
+        });
         console.log(
-          `[SEND_MEDIA_SUCCESS] Sent ${chats.length} files to ${groupId}`
+          `[SEND_MEDIA] Marked ${chats.length} messages as delivered: groupId=${castGroupId}, timestamp=${timestamp}`
         );
       } catch (error) {
-        console.error(`[SEND_MEDIA_ERROR] Full error: ${error.message}`);
-        ack(`Server error: ${error.message}`);
+        console.error(
+          `[SEND_MEDIA_ERROR] Failed to update status: error=${error.message}, timestamp=${timestamp}`
+        );
       }
-    });
+    }, 100);
+
+    // Step 10: Send success response
+    ack(null, { success: true, messages: responsePayload });
+    console.log(
+      `[SEND_MEDIA_SUCCESS] Sent ${chats.length} files to groupId=${castGroupId}, timestamp=${timestamp}`
+    );
+  } catch (error) {
+    console.error(
+      `[SEND_MEDIA_ERROR] Full error: ${error.message}, stack=${error.stack}, timestamp=${timestamp}`
+    );
+    ack(`Server error: ${error.message}`);
+  }
+});
 
     /** Leave group room */
     socket.on("leave_group_room", ({ groupId }) => {

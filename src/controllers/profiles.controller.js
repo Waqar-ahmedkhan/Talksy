@@ -63,7 +63,7 @@ export const authenticateToken = async (req, res, next) => {
 };
 
 
-const formatProfile = (profile, user, customName = null) => {
+export const formatProfile = (profile, user, customName = null) => {
   const phone = profile?.phone || "";
   const name = customName || profile?.displayName || "Unknown";
   const displayName = name && phone ? name : name || phone || "Unknown";
@@ -106,7 +106,7 @@ const generateRandom11DigitNumber = () => {
 /**
  * Normalize phone number
  */
-const normalizePhoneNumber = (phone) => {
+export const normalizePhoneNumber = (phone) => {
   if (!phone) {
     console.warn("[normalizePhoneNumber] No phone number provided");
     return phone;

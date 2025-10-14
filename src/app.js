@@ -10,7 +10,8 @@ import authRoutes from "./routes/auth.routes.js";
 import profileRoutes from "./routes/profiles.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
-
+import groupRoutes from  "./routes/group.routes.js"  
+import blockRoutes from "./routes/block.routes.js"
 dotenv.config();
 
 const app = express();
@@ -38,6 +39,7 @@ connectDB();
 app.use("/api/auth", authRoutes);
 app.use("/api/profiles", profileRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/upload", uploadRoutes); // <-- MOUNT THE NEW ROUTER
-
+app.use("/api/upload", uploadRoutes);
+app.use("/api/groups", groupRoutes);
+app.use("/api/blocks", blockRoutes);
 export default app;
