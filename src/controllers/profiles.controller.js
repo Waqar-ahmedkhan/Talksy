@@ -4,7 +4,6 @@ import User from "../models/User.js";
 import Chat from "../models/Chat.js";
 import Contact from "../models/Contact.js";
 
-
 export const authenticateToken = async (req, res, next) => {
   try {
     console.log("[authenticateToken] Starting token verification");
@@ -61,7 +60,6 @@ export const authenticateToken = async (req, res, next) => {
       .json({ success: false, error: "Invalid or expired token" });
   }
 };
-
 
 export const formatProfile = (profile, user, customName = null) => {
   const phone = profile?.phone || "";
@@ -145,7 +143,6 @@ const formatChat = (chat) => {
   );
   return formatted;
 };
-
 
 export const createProfile = async (req, res) => {
   try {
@@ -248,7 +245,7 @@ export const createProfile = async (req, res) => {
         displayName: displayName.trim(),
         online: false,
         lastSeen: new Date(),
-        fcmToken: fcmToken.trim(), 
+        fcmToken: fcmToken.trim(),
       });
       await user.save();
       console.log(
@@ -256,7 +253,7 @@ export const createProfile = async (req, res) => {
       );
     } else {
       if (fcmToken.trim()) {
-        user.fcmToken = fcmToken.trim(); 
+        user.fcmToken = fcmToken.trim();
         await user.save();
       }
       console.log(
@@ -519,77 +516,154 @@ export const getProfilesFromContacts = async (req, res) => {
  * Get Profile + Chat History with Target User
  */
 export const getProfileWithChat = async (req, res) => {
+  const timestamp = new Date().toISOString();
   try {
     console.log(
       `[getProfileWithChat] Processing request: params=${JSON.stringify(
         req.params
-      )}, userId=${req.user._id}`
+      )}, userId=${req.user._id} at ${timestamp}`
     );
+
     const myPhone = req.user.phone;
     const targetPhone = req.params.phone;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
 
     if (!targetPhone) {
-      console.error("[getProfileWithChat] Target phone number is required");
+      console.error(
+        `[getProfileWithChat] Target phone number is required at ${timestamp}`
+      );
       return res
         .status(400)
         .json({ success: false, error: "Target phone number is required" });
     }
 
-    const myProfile = await Profile.findOne({ phone: myPhone });
+    if (page < 1 || limit < 1 || limit > 100) {
+      console.error(
+        `[getProfileWithChat] Invalid pagination: page=${page}, limit=${limit} at ${timestamp}`
+      );
+      return res.status(400).json({
+        success: false,
+        error:
+          "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+      });
+    }
+
+    // Fetch profiles in a single query
+    const [myProfile, targetProfile] = await Promise.all([
+      Profile.findOne({ phone: myPhone }).lean(),
+      Profile.findOne({ phone: targetPhone }).lean(),
+    ]);
+
     if (!myProfile) {
-      console.error(`[getProfileWithChat] Profile not found: phone=${myPhone}`);
+      console.error(
+        `[getProfileWithChat] Profile not found: phone=${myPhone} at ${timestamp}`
+      );
       return res
         .status(404)
         .json({ success: false, error: "Your profile not found" });
     }
 
-    const targetProfile = await Profile.findOne({ phone: targetPhone });
     if (!targetProfile) {
       console.error(
-        `[getProfileWithChat] Profile not found: phone=${targetPhone}`
+        `[getProfileWithChat] Profile not found: phone=${targetPhone} at ${timestamp}`
       );
       return res
         .status(404)
         .json({ success: false, error: "Target profile not found" });
     }
 
-    const targetUser = await User.findOne({ phone: targetPhone });
+    // Check if blocked
+    const blocked = await Block.findOne({
+      $or: [
+        { blockerId: myProfile._id, blockedId: targetProfile._id },
+        { blockerId: targetProfile._id, blockedId: myProfile._id },
+      ],
+    }).lean();
+    if (blocked) {
+      console.warn(
+        `[getProfileWithChat] Blocked relationship: blockerId=${blocked.blockerId}, blockedId=${blocked.blockedId} at ${timestamp}`
+      );
+      return res.status(403).json({
+        success: false,
+        error: "Cannot fetch chat history: User is blocked",
+      });
+    }
+
+    // Fetch target user and contact in parallel
+    const [targetUser, contact] = await Promise.all([
+      User.findOne({ phone: targetPhone }).lean(),
+      Contact.findOne({ userId: req.user._id, phone: targetPhone })
+        .select("customName")
+        .lean(),
+    ]);
+
     console.log(
       `[getProfileWithChat] Target user ${
         targetUser ? "found" : "not found"
-      }: phone=${targetPhone}`
+      }: phone=${targetPhone}, customName=${
+        contact?.customName || null
+      } at ${timestamp}`
     );
 
-    const contact = await Contact.findOne({
-      userId: req.user._id,
-      phone: targetPhone,
-    }).select("customName");
-    const customName = contact?.customName || null;
-    console.log(
-      `[getProfileWithChat] Custom name: phone=${targetPhone}, customName=${customName}`
-    );
-
+    // Fetch chats with pagination and filtering out deleted messages
     const chats = await Chat.find({
-      $or: [
-        { senderId: myProfile._id, receiverId: targetProfile._id },
-        { senderId: targetProfile._id, receiverId: myProfile._id },
+      $and: [
+        {
+          $or: [
+            { senderId: myProfile._id, receiverId: targetProfile._id },
+            { senderId: targetProfile._id, receiverId: myProfile._id },
+          ],
+        },
+        { deletedFor: { $ne: myProfile._id } }, // Exclude messages deleted for the user
       ],
     })
       .sort({ createdAt: -1 })
-      .limit(50);
-    console.log(`[getProfileWithChat] Found ${chats.length} chats`);
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    console.log(
+      `[getProfileWithChat] Found ${chats.length} chats at ${timestamp}`
+    );
+
+    // Update status to "read" for unread messages from the target user
+    const unreadChatIds = chats
+      .filter(
+        (chat) =>
+          chat.senderId.toString() === targetProfile._id.toString() &&
+          ["sent", "delivered"].includes(chat.status)
+      )
+      .map((chat) => chat._id);
+
+    if (unreadChatIds.length > 0) {
+      await Chat.updateMany(
+        { _id: { $in: unreadChatIds } },
+        { status: "read" }
+      );
+      console.log(
+        `[getProfileWithChat] Marked ${unreadChatIds.length} messages as read at ${timestamp}`
+      );
+    }
 
     const response = {
       success: true,
-      profile: formatProfile(targetProfile, targetUser, customName),
+      page,
+      limit,
+      total: chats.length,
+      profile: formatProfile(targetProfile, targetUser, contact?.customName),
       chatHistory: chats.map(formatChat),
     };
+
     console.log(
-      `[getProfileWithChat] Response ready: chats=${response.chatHistory.length}`
+      `[getProfileWithChat] Response ready: chats=${response.chatHistory.length} at ${timestamp}`
     );
     return res.json(response);
   } catch (err) {
-    console.error(`[getProfileWithChat] Error: ${err.message}`);
+    console.error(
+      `[getProfileWithChat] Error: ${err.message} at ${timestamp}`,
+      { errorDetails: err.errors }
+    );
     return res
       .status(500)
       .json({ success: false, error: "Server error", details: err.message });
@@ -777,8 +851,12 @@ export const getChatList = async (req, res) => {
       "phone online lastSeen fcmToken"
     );
     console.log(`[getChatList] Found ${users.length} users`);
-    users.forEach(user => {
-      console.log(`[getChatList] User: phone=${user.phone}, fcmToken=${user.fcmToken || 'null'}`);
+    users.forEach((user) => {
+      console.log(
+        `[getChatList] User: phone=${user.phone}, fcmToken=${
+          user.fcmToken || "null"
+        }`
+      );
     });
     const userMap = new Map(
       users.map((u) => [normalizePhoneNumber(u.phone), u])
@@ -823,7 +901,11 @@ export const getChatList = async (req, res) => {
             ? chat.receiverId
             : chat.senderId;
         const otherPhone = normalizePhoneNumber(otherProfile.phone);
-        console.log(`[getChatList] Other profile fcmToken: ${otherProfile.fcmToken || 'null'}`);
+        console.log(
+          `[getChatList] Other profile fcmToken: ${
+            otherProfile.fcmToken || "null"
+          }`
+        );
         const customName = contactMap.get(otherPhone) || null;
         let displayName;
         if (customName) {
@@ -846,7 +928,10 @@ export const getChatList = async (req, res) => {
             avatarUrl: otherProfile.avatarUrl || "",
             online: userMap.get(otherPhone)?.online || false,
             lastSeen: userMap.get(otherPhone)?.lastSeen || null,
-            fcmToken: otherProfile.fcmToken || userMap.get(otherPhone)?.fcmToken || null,
+            fcmToken:
+              otherProfile.fcmToken ||
+              userMap.get(otherPhone)?.fcmToken ||
+              null,
           },
           latestMessage: chat,
           unreadCount:
