@@ -309,89 +309,89 @@ export const initAudioSocket = (server) => {
     });
 
     /** Accept call (with WebRTC answer) */
-    socket.on("accept_call", async ({ callerId, calleeId, answer }) => {
-      try {
-        console.log(`[AUDIO_ACCEPT_INFO] Accept_call event received: callerId=${callerId}, calleeId=${calleeId}, answer keys=${Object.keys(answer || {})} at ${getPKTTimestamp()}`);
+    // socket.on("accept_call", async ({ callerId, calleeId, answer }) => {
+    //   try {
+    //     console.log(`[AUDIO_ACCEPT_INFO] Accept_call event received: callerId=${callerId}, calleeId=${calleeId}, answer keys=${Object.keys(answer || {})} at ${getPKTTimestamp()}`);
         
-        // Resolve to MongoDB ObjectIDs
-        const resolvedCaller = await resolveToUserId(callerId);
-        const resolvedCallee = await resolveToUserId(calleeId);
+    //     // Resolve to MongoDB ObjectIDs
+    //     const resolvedCaller = await resolveToUserId(callerId);
+    //     const resolvedCallee = await resolveToUserId(calleeId);
         
-        if (!resolvedCaller || !resolvedCallee) {
-          console.error(`[AUDIO_ACCEPT_ERROR] Could not resolve caller or callee IDs (caller: ${resolvedCaller}, callee: ${resolvedCallee}) at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Invalid user identifiers" });
-        }
+    //     if (!resolvedCaller || !resolvedCallee) {
+    //       console.error(`[AUDIO_ACCEPT_ERROR] Could not resolve caller or callee IDs (caller: ${resolvedCaller}, callee: ${resolvedCallee}) at ${getPKTTimestamp()}`);
+    //       return socket.emit("call_error", { error: "Invalid user identifiers" });
+    //     }
 
-        const pending = pendingCalls.get(resolvedCallee);
-        if (!pending || pending.callerId !== resolvedCaller) {
-          console.error(`[AUDIO_ACCEPT_ERROR] No valid pending call for ${resolvedCallee} from ${resolvedCaller} (pending: ${!!pending}) at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "No pending call to accept" });
-        }
+    //     const pending = pendingCalls.get(resolvedCallee);
+    //     if (!pending || pending.callerId !== resolvedCaller) {
+    //       console.error(`[AUDIO_ACCEPT_ERROR] No valid pending call for ${resolvedCallee} from ${resolvedCaller} (pending: ${!!pending}) at ${getPKTTimestamp()}`);
+    //       return socket.emit("call_error", { error: "No pending call to accept" });
+    //     }
 
-        // Validate answer structure
-        if (!answer || !answer.type || !answer.sdp || typeof answer.sdp !== 'string' || !answer.sdp.trim()) {
-          console.error(`[AUDIO_ACCEPT_ERROR] Invalid answer structure from ${resolvedCallee}: type=${answer?.type}, sdp length=${answer?.sdp?.length || 0} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Invalid call answer structure" });
-        }
-        console.log(`[AUDIO_ACCEPT_DEBUG] Answer validated: type=${answer.type}, sdp length=${answer.sdp.length} at ${getPKTTimestamp()}`);
+    //     // Validate answer structure
+    //     if (!answer || !answer.type || !answer.sdp || typeof answer.sdp !== 'string' || !answer.sdp.trim()) {
+    //       console.error(`[AUDIO_ACCEPT_ERROR] Invalid answer structure from ${resolvedCallee}: type=${answer?.type}, sdp length=${answer?.sdp?.length || 0} at ${getPKTTimestamp()}`);
+    //       return socket.emit("call_error", { error: "Invalid call answer structure" });
+    //     }
+    //     console.log(`[AUDIO_ACCEPT_DEBUG] Answer validated: type=${answer.type}, sdp length=${answer.sdp.length} at ${getPKTTimestamp()}`);
 
-        const { offer } = pending;
-        pendingCalls.delete(resolvedCallee);
-        console.log(`[AUDIO_ACCEPT_INFO] Removed pending call: ${resolvedCaller} → ${resolvedCallee} at ${getPKTTimestamp()}`);
+    //     const { offer } = pending;
+    //     pendingCalls.delete(resolvedCallee);
+    //     console.log(`[AUDIO_ACCEPT_INFO] Removed pending call: ${resolvedCaller} → ${resolvedCallee} at ${getPKTTimestamp()}`);
 
-        // Mark both as busy
-        busyUsers.add(resolvedCaller);
-        busyUsers.add(resolvedCallee);
-        console.log(`[AUDIO_BUSY_INFO] Marked users busy: ${resolvedCaller}, ${resolvedCallee} at ${getPKTTimestamp()}`);
+    //     // Mark both as busy
+    //     busyUsers.add(resolvedCaller);
+    //     busyUsers.add(resolvedCallee);
+    //     console.log(`[AUDIO_BUSY_INFO] Marked users busy: ${resolvedCaller}, ${resolvedCallee} at ${getPKTTimestamp()}`);
 
-        const callerSocket = onlineUsers.get(resolvedCaller);
-        if (callerSocket) {
-          io.to(callerSocket).emit("call_accepted", {
-            calleeId: calleeId, // Send original for display
-            answer,
-            callerUserId: resolvedCaller,
-            calleeUserId: resolvedCallee,
-          });
-          console.log(`[AUDIO_ACCEPT_SENT_INFO] Sent call_accepted to ${resolvedCaller} (socket: ${callerSocket}) at ${getPKTTimestamp()}`);
-        } else {
-          console.warn(`[AUDIO_ACCEPT_WARN] Caller socket not found for ${resolvedCaller} at ${getPKTTimestamp()}`);
-        }
+    //     const callerSocket = onlineUsers.get(resolvedCaller);
+    //     if (callerSocket) {
+    //       io.to(callerSocket).emit("call_accepted", {
+    //         calleeId: calleeId, // Send original for display
+    //         answer,
+    //         callerUserId: resolvedCaller,
+    //         calleeUserId: resolvedCallee,
+    //       });
+    //       console.log(`[AUDIO_ACCEPT_SENT_INFO] Sent call_accepted to ${resolvedCaller} (socket: ${callerSocket}) at ${getPKTTimestamp()}`);
+    //     } else {
+    //       console.warn(`[AUDIO_ACCEPT_WARN] Caller socket not found for ${resolvedCaller} at ${getPKTTimestamp()}`);
+    //     }
 
-        // Create a unique room for this call
-        const callRoom = [resolvedCaller, resolvedCallee].sort().join("-");
-        socket.join(callRoom); // Callee joins room
-        console.log(`[AUDIO_ROOM_INFO] Callee ${resolvedCallee} joined room ${callRoom} at ${getPKTTimestamp()}`);
+    //     // Create a unique room for this call
+    //     const callRoom = [resolvedCaller, resolvedCallee].sort().join("-");
+    //     socket.join(callRoom); // Callee joins room
+    //     console.log(`[AUDIO_ROOM_INFO] Callee ${resolvedCallee} joined room ${callRoom} at ${getPKTTimestamp()}`);
 
-        if (callerSocket) {
-          const callerSocketObj = io.sockets.sockets.get(callerSocket);
-          if (callerSocketObj) {
-            callerSocketObj.join(callRoom);
-            console.log(`[AUDIO_ROOM_INFO] Caller ${resolvedCaller} joined room ${callRoom} at ${getPKTTimestamp()}`);
-          }
-          io.to(callerSocket).emit("join_call_room", { room: callRoom });
-          console.log(`[AUDIO_ROOM_NOTIFY_INFO] Notified caller to join room ${callRoom} at ${getPKTTimestamp()}`);
-        }
+    //     if (callerSocket) {
+    //       const callerSocketObj = io.sockets.sockets.get(callerSocket);
+    //       if (callerSocketObj) {
+    //         callerSocketObj.join(callRoom);
+    //         console.log(`[AUDIO_ROOM_INFO] Caller ${resolvedCaller} joined room ${callRoom} at ${getPKTTimestamp()}`);
+    //       }
+    //       io.to(callerSocket).emit("join_call_room", { room: callRoom });
+    //       console.log(`[AUDIO_ROOM_NOTIFY_INFO] Notified caller to join room ${callRoom} at ${getPKTTimestamp()}`);
+    //     }
 
-        // Send buffered ICE candidates if any
-        if (iceBuffer.has(resolvedCaller)) {
-          const bufferedCandidates = iceBuffer.get(resolvedCaller);
-          io.to(callerSocket).emit("ice_candidate", bufferedCandidates);
-          iceBuffer.delete(resolvedCaller);
-          console.log(`[AUDIO_ICE_BUFFER_INFO] Sent ${bufferedCandidates.length} buffered ICE candidates to caller ${resolvedCaller} at ${getPKTTimestamp()}`);
-        }
-        if (iceBuffer.has(resolvedCallee)) {
-          const bufferedCandidates = iceBuffer.get(resolvedCallee);
-          io.to(calleeSocket).emit("ice_candidate", bufferedCandidates);
-          iceBuffer.delete(resolvedCallee);
-          console.log(`[AUDIO_ICE_BUFFER_INFO] Sent ${bufferedCandidates.length} buffered ICE candidates to callee ${resolvedCallee} at ${getPKTTimestamp()}`);
-        }
+    //     // Send buffered ICE candidates if any
+    //     if (iceBuffer.has(resolvedCaller)) {
+    //       const bufferedCandidates = iceBuffer.get(resolvedCaller);
+    //       io.to(callerSocket).emit("ice_candidate", bufferedCandidates);
+    //       iceBuffer.delete(resolvedCaller);
+    //       console.log(`[AUDIO_ICE_BUFFER_INFO] Sent ${bufferedCandidates.length} buffered ICE candidates to caller ${resolvedCaller} at ${getPKTTimestamp()}`);
+    //     }
+    //     if (iceBuffer.has(resolvedCallee)) {
+    //       const bufferedCandidates = iceBuffer.get(resolvedCallee);
+    //       io.to(calleeSocket).emit("ice_candidate", bufferedCandidates);
+    //       iceBuffer.delete(resolvedCallee);
+    //       console.log(`[AUDIO_ICE_BUFFER_INFO] Sent ${bufferedCandidates.length} buffered ICE candidates to callee ${resolvedCallee} at ${getPKTTimestamp()}`);
+    //     }
 
-        console.log(`[AUDIO_ACCEPT_SUCCESS] Call accepted and connected: ${resolvedCaller} ↔ ${resolvedCallee} in room ${callRoom} at ${getPKTTimestamp()}`);
-      } catch (err) {
-        console.error(`[AUDIO_ACCEPT_ERROR] Unexpected error in accept_call: ${err.message} at ${getPKTTimestamp()}`, err.stack);
-        socket.emit("call_error", { error: "Failed to accept call" });
-      }
-    });
+    //     console.log(`[AUDIO_ACCEPT_SUCCESS] Call accepted and connected: ${resolvedCaller} ↔ ${resolvedCallee} in room ${callRoom} at ${getPKTTimestamp()}`);
+    //   } catch (err) {
+    //     console.error(`[AUDIO_ACCEPT_ERROR] Unexpected error in accept_call: ${err.message} at ${getPKTTimestamp()}`, err.stack);
+    //     socket.emit("call_error", { error: "Failed to accept call" });
+    //   }
+    // });
 
     /** Reject call */
     socket.on("reject_call", async ({ callerId, calleeId }) => {
