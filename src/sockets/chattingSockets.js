@@ -8,6 +8,63 @@ import Profile from "../models/Profile.js";
 import jwt from "jsonwebtoken";
 import moment from "moment-timezone";
 
+const logTimestamp = () =>
+  moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
+
+// Normalize phone number function (consistent with Express routes)
+export const normalizePhoneNumber = (phone) => {
+  const timestamp = logTimestamp();
+  if (!phone || typeof phone !== "string") {
+    console.warn(
+      `[normalizePhoneNumber] Invalid or missing phone number: ${phone} at ${timestamp}`
+    );
+    return null;
+  }
+  let normalized = phone.trim().replace(/[\s-]/g, "");
+  if (!normalized.startsWith("+") && /^\d{10}$/.test(normalized)) {
+    normalized = `+92${normalized}`; // Default to Pakistan country code
+  }
+  console.log(
+    `[normalizePhoneNumber] Normalized: ${phone} -> ${normalized} at ${timestamp}`
+  );
+  return normalized;
+};
+
+// Format profile for response (consistent with get_blocked_users)
+export const formatProfile = (
+  profile,
+  user,
+  customName = null,
+  isBlocked = false
+) => {
+  const timestamp = logTimestamp();
+  const phone = profile?.phone || "";
+  const name = customName || profile?.displayName || "Unknown";
+  const displayName = name && phone ? name : name || phone || "Unknown";
+
+  const formatted = {
+    id: profile?._id?.toString() || null,
+    userId: user?._id?.toString() || null,
+    phone,
+    displayName,
+    randomNumber: profile?.randomNumber || "",
+    isVisible: profile?.isVisible ?? false,
+    isNumberVisible: profile?.isNumberVisible ?? false,
+    avatarUrl: validator.escape(profile?.avatarUrl || ""),
+    fcmToken: profile?.fcmToken || user?.fcmToken || "",
+    createdAt: profile?.createdAt?.toISOString() || null,
+    online: user?.online ?? false,
+    lastSeen: user?.lastSeen?.toISOString() || null,
+    customName: customName || null,
+    isBlocked,
+  };
+
+  console.log(
+    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
+  );
+  return formatted;
+};
+
 export const initChatSocket = (server) => {
   const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] },
