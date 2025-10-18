@@ -4,15 +4,25 @@ import User from "../models/User.js";
 import Chat from "../models/Chat.js";
 import Contact from "../models/Contact.js";
 import Block from "../models/Block.js";
+import moment from "moment-timezone";
+import validator from "validator";
 
+// Utility for consistent timestamp logging
+const logTimestamp = () =>
+  moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
+
+// Middleware to authenticate JWT token
 export const authenticateToken = async (req, res, next) => {
+  const timestamp = logTimestamp();
   try {
-    console.log("[authenticateToken] Starting token verification");
+    console.log(
+      `[authenticateToken] Starting token verification at ${timestamp}`
+    );
     const authHeader = req.headers["authorization"];
     const token = authHeader?.split(" ")[1];
 
     if (!token) {
-      console.error("[authenticateToken] No token provided");
+      console.error(`❌ [authenticateToken] No token provided at ${timestamp}`);
       return res
         .status(401)
         .json({ success: false, error: "Access token is required" });
@@ -20,12 +30,12 @@ export const authenticateToken = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     console.log(
-      `[authenticateToken] Token decoded: phone=${decoded.phone}, iat=${decoded.iat}, exp=${decoded.exp}`
+      `[authenticateToken] Token decoded: phone=${decoded.phone}, iat=${decoded.iat}, exp=${decoded.exp} at ${timestamp}`
     );
 
     if (!decoded.phone) {
       console.error(
-        "[authenticateToken] Phone number missing in token payload"
+        `❌ [authenticateToken] Phone number missing in token payload at ${timestamp}`
       );
       return res
         .status(403)
@@ -37,24 +47,24 @@ export const authenticateToken = async (req, res, next) => {
     );
     if (!user) {
       console.error(
-        `[authenticateToken] No user found for phone: ${decoded.phone}`
+        `❌ [authenticateToken] No user found for phone: ${decoded.phone} at ${timestamp}`
       );
       return res.status(404).json({ success: false, error: "User not found" });
     }
 
     req.user = {
-      _id: user._id,
+      _id: user._id.toString(),
       phone: decoded.phone,
       iat: decoded.iat,
       exp: decoded.exp,
     };
     console.log(
-      `[authenticateToken] User attached: userId=${user._id}, phone=${decoded.phone}`
+      `[authenticateToken] User attached: userId=${req.user._id}, phone=${req.user.phone} at ${timestamp}`
     );
     next();
   } catch (err) {
     console.error(
-      `[authenticateToken] JWT verification failed: ${err.message}`
+      `❌ [authenticateToken] JWT verification failed: ${err.message} at ${timestamp}`
     );
     return res
       .status(403)
@@ -62,174 +72,178 @@ export const authenticateToken = async (req, res, next) => {
   }
 };
 
-const checkBlockStatus = async (req, res, next) => {
+// Middleware to check block status
+export const checkBlockStatus = async (req, res, next) => {
+  const timestamp = logTimestamp();
   try {
-    const { targetPhone } = req.body || req.params; // Extract targetPhone from body or params
+    const { targetPhone } = req.body || req.params;
     const myPhone = normalizePhoneNumber(req.user.phone);
 
-    if (targetPhone) {
-      const normalizedTargetPhone = normalizePhoneNumber(targetPhone);
-      const myProfile = await Profile.findOne({ phone: myPhone });
-      const targetProfile = await Profile.findOne({
-        phone: normalizedTargetPhone,
-      });
-
-      if (!myProfile || !targetProfile) {
-        console.error(
-          `[checkBlockStatus] Profile not found: myPhone=${myPhone}, targetPhone=${normalizedTargetPhone}`
-        );
-        return res
-          .status(404)
-          .json({ success: false, error: "Profile not found" });
-      }
-
-      const block = await Block.findOne({
-        blockerId: myProfile._id,
-        blockedId: targetProfile._id,
-      });
-      if (block) {
-        console.log(
-          `[checkBlockStatus] User is blocked: blockerId=${myProfile._id}, blockedId=${targetProfile._id}`
-        );
-        return res
-          .status(403)
-          .json({ success: false, error: "User is blocked" });
-      }
+    if (!targetPhone) {
+      console.log(
+        `[checkBlockStatus] No targetPhone provided, skipping check at ${timestamp}`
+      );
+      return next();
     }
+
+    const normalizedTargetPhone = normalizePhoneNumber(targetPhone);
+    if (!normalizedTargetPhone) {
+      console.error(
+        `❌ [checkBlockStatus] Invalid target phone number: ${targetPhone} at ${timestamp}`
+      );
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid target phone number" });
+    }
+
+    const [myProfile, targetProfile] = await Promise.all([
+      Profile.findOne({ phone: myPhone }),
+      Profile.findOne({ phone: normalizedTargetPhone }),
+    ]);
+
+    if (!myProfile || !targetProfile) {
+      console.error(
+        `❌ [checkBlockStatus] Profile not found: myPhone=${myPhone}, targetPhone=${normalizedTargetPhone} at ${timestamp}`
+      );
+      return res
+        .status(404)
+        .json({ success: false, error: "Profile not found" });
+    }
+
+    const block = await Block.findOne({
+      $or: [
+        { blockerId: myProfile._id, blockedId: targetProfile._id },
+        { blockerId: targetProfile._id, blockedId: myProfile._id },
+      ],
+    });
+
+    if (block) {
+      console.log(
+        `[checkBlockStatus] User is blocked: blockerId=${block.blockerId}, blockedId=${block.blockedId} at ${timestamp}`
+      );
+      return res.status(403).json({ success: false, error: "User is blocked" });
+    }
+
+    console.log(
+      `[checkBlockStatus] No block found for myPhone=${myPhone}, targetPhone=${normalizedTargetPhone} at ${timestamp}`
+    );
     next();
   } catch (err) {
-    console.error(`[checkBlockStatus] Error: ${err.message}`);
+    console.error(
+      `❌ [checkBlockStatus] Error: ${err.message} at ${timestamp}`
+    );
     return res
       .status(500)
       .json({ success: false, error: "Server error", details: err.message });
   }
 };
 
-// export const formatProfile = (profile, user, customName = null) => {
-//   const phone = profile?.phone || "";
-//   const name = customName || profile?.displayName || "Unknown";
-//   const displayName = name && phone ? name : name || phone || "Unknown";
+// Normalize phone number function
+export const normalizePhoneNumber = (phone) => {
+  const timestamp = logTimestamp();
+  if (!phone || typeof phone !== "string") {
+    console.warn(
+      `[normalizePhoneNumber] Invalid or missing phone number: ${phone} at ${timestamp}`
+    );
+    return null;
+  }
+  let normalized = phone.trim().replace(/[\s-]/g, "");
+  if (!normalized.startsWith("+") && /^\d{10}$/.test(normalized)) {
+    normalized = `+92${normalized}`; // Default to Pakistan country code
+  }
+  console.log(
+    `[normalizePhoneNumber] Normalized: ${phone} -> ${normalized} at ${timestamp}`
+  );
+  return normalized;
+};
 
-//   const formatted = {
-//     id: profile?._id || null,
-//     userId: user?._id || null,
-//     phone,
-//     displayName,
-//     randomNumber: profile?.randomNumber || "",
-//     isVisible: profile?.isVisible ?? false,
-//     isNumberVisible: profile?.isNumberVisible ?? false,
-//     avatarUrl: profile?.avatarUrl || "",
-//     fcmToken: profile?.fcmToken || "", // Include FCM token
-//     createdAt: profile?.createdAt || null,
-//     online: user?.online ?? false,
-//     lastSeen: user?.lastSeen || null,
-//     customName: customName || null,
-//   };
+// Generate 11-digit random number
+const generateRandom11DigitNumber = () => {
+  const randomNumber = Array.from({ length: 11 }, () =>
+    Math.floor(Math.random() * 10)
+  ).join("");
+  console.log(
+    `[generateRandom11DigitNumber] Generated: ${randomNumber} at ${logTimestamp()}`
+  );
+  return randomNumber;
+};
 
-//   console.log(
-//     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, fcmToken=${
-//       formatted.fcmToken ? "provided" : "empty"
-//     }`
-//   );
-//   return formatted;
-// };
-
+// Format profile for response
 export const formatProfile = (
   profile,
   user,
   customName = null,
   isBlocked = false
 ) => {
+  const timestamp = logTimestamp();
   const phone = profile?.phone || "";
   const name = customName || profile?.displayName || "Unknown";
   const displayName = name && phone ? name : name || phone || "Unknown";
 
   const formatted = {
-    id: profile?._id || null,
-    userId: user?._id || null,
+    id: profile?._id?.toString() || null,
+    userId: user?._id?.toString() || null,
     phone,
     displayName,
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
-    avatarUrl: profile?.avatarUrl || "",
-    fcmToken: profile?.fcmToken || "",
-    createdAt: profile?.createdAt || null,
+    avatarUrl: validator.escape(profile?.avatarUrl || ""),
+    fcmToken: profile?.fcmToken || user?.fcmToken || "",
+    createdAt: profile?.createdAt?.toISOString() || null,
     online: user?.online ?? false,
-    lastSeen: user?.lastSeen || null,
+    lastSeen: user?.lastSeen?.toISOString() || null,
     customName: customName || null,
-    isBlocked, // Indicate if the user is blocked
+    isBlocked,
   };
 
   console.log(
-    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked}`
+    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
   );
   return formatted;
 };
 
-/**
- * Generate 11-digit random number
- */
-const generateRandom11DigitNumber = () => {
-  const randomNumber = Array.from({ length: 11 }, () =>
-    Math.floor(Math.random() * 10)
-  ).join("");
-  console.log(`[generateRandom11DigitNumber] Generated: ${randomNumber}`);
-  return randomNumber;
-};
-
-/**
- * Normalize phone number
- */
-export const normalizePhoneNumber = (phone) => {
-  if (!phone) {
-    console.warn("[normalizePhoneNumber] No phone number provided");
-    return phone;
-  }
-  let normalized = phone.trim();
-  if (!normalized.startsWith("+")) {
-    normalized = `+${normalized}`;
-  }
-  normalized = normalized.replace(/[\s-]/g, "");
-  console.log(`[normalizePhoneNumber] Normalized: ${phone} -> ${normalized}`);
-  return normalized;
-};
-
-/**
- * Format chat for response
- */
+// Format chat for response
 const formatChat = (chat) => {
-  const chatId = chat?._id || "unknown";
-  console.log(`[formatChat] Formatting chat: id=${chatId}`);
+  const timestamp = logTimestamp();
+  const chatId = chat?._id?.toString() || "unknown";
+  console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
   const formatted = {
     id: chatId,
-    senderId: chat?.senderId?._id || null,
-    receiverId: chat?.receiverId?._id || null,
+    senderId: chat?.senderId?._id?.toString() || null,
+    receiverId: chat?.receiverId?._id?.toString() || null,
     type: chat?.type || "text",
-    content:
+    content: validator.escape(
       chat?.content?.substring(0, 50) +
-        (chat?.content?.length > 50 ? "..." : "") || "",
+        (chat?.content?.length > 50 ? "..." : "") || ""
+    ),
     duration: chat?.duration || null,
-    fileName: chat?.fileName || null,
+    fileName: validator.escape(chat?.fileName || ""),
     status: chat?.status || "sent",
-    createdAt: chat?.createdAt || null,
+    createdAt: chat?.createdAt?.toISOString() || null,
     pinned: chat?.pinned || false,
   };
   console.log(
-    `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content}`
+    `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content} at ${timestamp}`
   );
   return formatted;
 };
 
+// Create or update user profile
 export const createProfile = async (req, res) => {
+  const timestamp = logTimestamp();
   try {
     console.log(
       `[createProfile] Processing request: body=${JSON.stringify(
         req.body
-      )}, userId=${req.user._id}`
+      )}, userId=${req.user?._id} at ${timestamp}`
     );
+
+    // Validate request body
     if (!req.body || typeof req.body !== "object") {
-      console.error("[createProfile] Missing or invalid request body");
+      console.error(
+        `❌ [createProfile] Missing or invalid request body at ${timestamp}`
+      );
       return res.status(400).json({
         success: false,
         error: "Request body is missing or invalid JSON",
@@ -243,22 +257,44 @@ export const createProfile = async (req, res) => {
       avatarUrl = "",
       fcmToken = "",
     } = req.body;
-    const phone = req.user?.phone;
+    const phone = normalizePhoneNumber(req.user?.phone);
 
+    // Validate inputs
     if (!phone) {
-      console.error("[createProfile] Phone number not found in token");
+      console.error(
+        `❌ [createProfile] Phone number not found in token at ${timestamp}`
+      );
       return res
         .status(401)
         .json({ success: false, error: "Phone number not found in token" });
     }
-    if (!displayName?.trim()) {
-      console.error("[createProfile] Display name is required");
+    if (
+      !displayName ||
+      typeof displayName !== "string" ||
+      !displayName.trim()
+    ) {
+      console.error(
+        `❌ [createProfile] Display name is required and must be a non-empty string at ${timestamp}`
+      );
       return res
         .status(400)
         .json({ success: false, error: "Display name is required" });
     }
+    if (
+      typeof isVisible !== "boolean" ||
+      typeof isNumberVisible !== "boolean"
+    ) {
+      console.error(
+        `❌ [createProfile] Invalid visibility flags at ${timestamp}`
+      );
+      return res
+        .status(400)
+        .json({ success: false, error: "Visibility flags must be booleans" });
+    }
     if (fcmToken && typeof fcmToken !== "string") {
-      console.error("[createProfile] Invalid FCM token format");
+      console.error(
+        `❌ [createProfile] Invalid FCM token format at ${timestamp}`
+      );
       return res
         .status(400)
         .json({ success: false, error: "FCM token must be a string" });
@@ -267,93 +303,107 @@ export const createProfile = async (req, res) => {
       fcmToken &&
       (fcmToken.trim().length < 50 || fcmToken.trim().length > 500)
     ) {
-      console.error("[createProfile] Invalid FCM token length");
+      console.error(
+        `❌ [createProfile] Invalid FCM token length at ${timestamp}`
+      );
       return res
         .status(400)
         .json({ success: false, error: "Invalid FCM token length" });
     }
+    if (avatarUrl && typeof avatarUrl !== "string") {
+      console.error(
+        `❌ [createProfile] Invalid avatar URL format at ${timestamp}`
+      );
+      return res
+        .status(400)
+        .json({ success: false, error: "Avatar URL must be a string" });
+    }
 
+    // Sanitize inputs
+    const sanitizedDisplayName = validator.escape(displayName.trim());
+    const sanitizedAvatarUrl = validator.escape(avatarUrl.trim());
+    const sanitizedFcmToken = fcmToken ? validator.escape(fcmToken.trim()) : "";
+
+    // Check for existing profile
     let profile = await Profile.findOne({ phone });
+    const isNewProfile = !profile;
     console.log(
       `[createProfile] Profile ${
-        profile ? "found" : "not found"
-      } for phone=${phone}`
+        isNewProfile ? "not found" : "found"
+      } for phone=${phone} at ${timestamp}`
     );
 
-    if (profile) {
-      profile.displayName = displayName.trim();
-      profile.isVisible = isVisible;
-      profile.isNumberVisible = isNumberVisible;
-      profile.avatarUrl = avatarUrl.trim();
-      if (fcmToken.trim()) {
-        profile.fcmToken = fcmToken.trim();
-      }
-      console.log(
-        `[createProfile] Updating profile: phone=${phone}, fcmToken=${
-          fcmToken ? "provided" : "empty"
-        }`
-      );
-    } else {
+    if (isNewProfile) {
       profile = new Profile({
         phone,
-        displayName: displayName.trim(),
+        displayName: sanitizedDisplayName,
         randomNumber: generateRandom11DigitNumber(),
         isVisible,
         isNumberVisible,
-        avatarUrl: avatarUrl.trim(),
-        fcmToken: fcmToken.trim(),
+        avatarUrl: sanitizedAvatarUrl,
+        fcmToken: sanitizedFcmToken,
       });
       console.log(
         `[createProfile] Creating new profile: phone=${phone}, fcmToken=${
-          fcmToken ? "provided" : "empty"
-        }`
-      );
-    }
-
-    await profile.save();
-    console.log(
-      `[createProfile] Profile saved: phone=${phone}, profileId=${profile._id}`
-    );
-
-    let user = await User.findOne({ phone });
-    if (!user) {
-      user = new User({
-        phone,
-        displayName: displayName.trim(),
-        online: false,
-        lastSeen: new Date(),
-        fcmToken: fcmToken.trim(),
-      });
-      await user.save();
-      console.log(
-        `[createProfile] New user created: phone=${phone}, userId=${user._id}`
+          sanitizedFcmToken ? "provided" : "empty"
+        } at ${timestamp}`
       );
     } else {
-      if (fcmToken.trim()) {
-        user.fcmToken = fcmToken.trim();
-        await user.save();
-      }
+      profile.displayName = sanitizedDisplayName;
+      profile.isVisible = isVisible;
+      profile.isNumberVisible = isNumberVisible;
+      profile.avatarUrl = sanitizedAvatarUrl;
+      if (sanitizedFcmToken) profile.fcmToken = sanitizedFcmToken;
       console.log(
-        `[createProfile] User found: phone=${phone}, userId=${user._id}`
+        `[createProfile] Updating profile: phone=${phone}, fcmToken=${
+          sanitizedFcmToken ? "provided" : "empty"
+        } at ${timestamp}`
       );
     }
 
+    // Save profile and update/create user concurrently
+    const [savedProfile, user] = await Promise.all([
+      profile.save(),
+      User.findOneAndUpdate(
+        { phone },
+        {
+          displayName: sanitizedDisplayName,
+          fcmToken: sanitizedFcmToken || undefined,
+          online: false,
+          lastSeen: new Date(),
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      ),
+    ]);
+
+    console.log(
+      `[createProfile] Profile saved: phone=${phone}, profileId=${savedProfile._id} at ${timestamp}`
+    );
+    console.log(
+      `[createProfile] User ${
+        user.isNew ? "created" : "updated"
+      }: phone=${phone}, userId=${user._id} at ${timestamp}`
+    );
+
+    // Fetch contact for custom name
     const contact = await Contact.findOne({
       userId: req.user._id,
       phone,
     }).select("customName");
-    const customName = contact?.customName || null;
+    const customName = contact?.customName
+      ? validator.escape(contact.customName)
+      : null;
     console.log(
-      `[createProfile] Custom name for phone=${phone}: ${customName}`
+      `[createProfile] Custom name for phone=${phone}: ${customName} at ${timestamp}`
     );
 
-    return res.status(201).json({
+    return res.status(isNewProfile ? 201 : 200).json({
       success: true,
-      message: "Profile saved successfully",
-      profile: formatProfile(profile, user, customName),
+      message: `Profile ${isNewProfile ? "created" : "updated"} successfully`,
+      profile: formatProfile(savedProfile, user, customName),
     });
   } catch (err) {
-    console.error(`[createProfile] Error: ${err.message}`);
+    console.error(`❌ [createProfile] Error: ${err.message} at ${timestamp}`);
     return res
       .status(500)
       .json({ success: false, error: "Server error", details: err.message });
@@ -1573,16 +1623,30 @@ export const blockUser = async (req, res) => {
 };
 
 export const getBlockedUsers = async (req, res) => {
+  const timestamp = logTimestamp();
   try {
-    console.log(`[getBlockedUsers] Processing request: userId=${req.user._id}`);
+    console.log(
+      `[getBlockedUsers] Processing request: userId=${req.user._id} at ${timestamp}`
+    );
     const myPhone = normalizePhoneNumber(req.user.phone);
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
+
+    if (!myPhone) {
+      console.error(
+        `❌ [getBlockedUsers] Invalid user phone number at ${timestamp}`
+      );
+      return res
+        .status(401)
+        .json({ success: false, error: "Invalid user phone number" });
+    }
 
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
-      console.error(`[getBlockedUsers] Profile not found: phone=${myPhone}`);
+      console.error(
+        `❌ [getBlockedUsers] Profile not found: phone=${myPhone} at ${timestamp}`
+      );
       return res
         .status(404)
         .json({ success: false, error: "Your profile not found" });
@@ -1591,34 +1655,66 @@ export const getBlockedUsers = async (req, res) => {
     const blocked = await Block.find({ blockerId: myProfile._id })
       .populate(
         "blockedId",
-        "phone displayName isVisible isNumberVisible avatarUrl randomNumber createdAt"
+        "phone displayName isVisible isNumberVisible avatarUrl randomNumber createdAt fcmToken"
       )
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
 
-    console.log(`[getBlockedUsers] Found ${blocked.length} blocked users`);
-
-    const phoneNumbers = blocked.map((b) => b.blockedId.phone);
-    const users = await User.find({ phone: { $in: phoneNumbers } }).select(
-      "phone online lastSeen"
+    console.log(
+      `[getBlockedUsers] Found ${
+        blocked.length
+      } blocked users, blockedIds=${blocked
+        .map((b) => b.blockedId?._id)
+        .filter(Boolean)
+        .join(",")} at ${timestamp}`
     );
-    const userMap = new Map(users.map((u) => [u.phone, u]));
 
-    const contacts = await Contact.find({
-      userId: req.user._id,
-      phone: { $in: phoneNumbers },
-    }).select("phone customName");
+    if (!blocked.length) {
+      console.log(
+        `[getBlockedUsers] No blocked users found for blockerId=${myProfile._id} at ${timestamp}`
+      );
+      return res.json({
+        success: true,
+        page,
+        limit,
+        total: 0,
+        blockedUsers: [],
+      });
+    }
+
+    const phoneNumbers = blocked
+      .map((b) => normalizePhoneNumber(b.blockedId?.phone))
+      .filter(Boolean);
+    const [users, contacts] = await Promise.all([
+      User.find({ phone: { $in: phoneNumbers } }).select(
+        "phone online lastSeen fcmToken"
+      ),
+      Contact.find({
+        userId: req.user._id,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName"),
+    ]);
+
+    console.log(
+      `[getBlockedUsers] Found ${users.length} users, ${contacts.length} contacts at ${timestamp}`
+    );
+
+    const userMap = new Map(
+      users.map((u) => [normalizePhoneNumber(u.phone), u])
+    );
     const contactMap = new Map(
-      contacts.map((c) => [c.phone, c.customName || null])
+      contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
     );
 
-    const blockedProfiles = blocked.map((block) => {
-      const profile = block.blockedId;
-      const user = userMap.get(profile.phone);
-      const customName = contactMap.get(profile.phone);
-      return formatProfile(profile, user, customName, true); // isBlocked set to true
-    });
+    const blockedProfiles = blocked
+      .filter((block) => block.blockedId) // Ensure blockedId is populated
+      .map((block) => {
+        const profile = block.blockedId;
+        const user = userMap.get(normalizePhoneNumber(profile.phone));
+        const customName = contactMap.get(normalizePhoneNumber(profile.phone));
+        return formatProfile(profile, user, customName, true); // isBlocked set to true
+      });
 
     return res.json({
       success: true,
@@ -1628,7 +1724,7 @@ export const getBlockedUsers = async (req, res) => {
       blockedUsers: blockedProfiles,
     });
   } catch (err) {
-    console.error(`[getBlockedUsers] Error: ${err.message}`);
+    console.error(`❌ [getBlockedUsers] Error: ${err.message} at ${timestamp}`);
     return res
       .status(500)
       .json({ success: false, error: "Server error", details: err.message });
