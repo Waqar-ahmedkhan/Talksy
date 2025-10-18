@@ -6,9 +6,9 @@ import {
   getPublicProfiles,
   getProfilesFromContacts,
   getProfileWithChat,
-  getChatList, // Added
   deleteUserChat,
   upsertContacts,
+  getChatList,
 } from "../controllers/profiles.controller.js";
 
 const router = express.Router();
@@ -21,7 +21,7 @@ router.get("/me", authenticateToken, getMyProfile);
 router.post("/contacts", authenticateToken, getProfilesFromContacts);
 router.get("/with-chat/:phone", authenticateToken, getProfileWithChat);
 router.get("/chats", authenticateToken, getChatList);
-router.post('/contact', authenticateToken, upsertContacts)
+router.post("/contact", authenticateToken, upsertContacts);
 
 // Public routes
 router.get("/public", getPublicProfiles);
