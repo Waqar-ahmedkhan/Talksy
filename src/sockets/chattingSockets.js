@@ -52,7 +52,8 @@ export const formatProfile = (
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
-    avatarUrl: validator.escape(profile?.avatarUrl || ""),
+    avatarUrl: profile?.avatarUrl || "",
+
     fcmToken: profile?.fcmToken || user?.fcmToken || "",
     createdAt: profile?.createdAt?.toISOString() || null,
     online: user?.online ?? false,
