@@ -188,7 +188,7 @@ export const formatProfile = (
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
-   avatarUrl: profile?.avatarUrl || "",
+    avatarUrl: profile?.avatarUrl || "",
 
     fcmToken: profile?.fcmToken || user?.fcmToken || "",
     createdAt: profile?.createdAt?.toISOString() || null,
@@ -1603,7 +1603,7 @@ export const getChatList = async (req, res) => {
             displayName,
             customName,
             randomNumber: otherProfile.randomNumber || "",
-            validator.escape(profile?.avatarUrl || "")
+            avatarUrl: otherProfile.avatarUrl || "",
 
             online: userMap.get(otherPhone)?.online || false,
             lastSeen: userMap.get(otherPhone)?.lastSeen?.toISOString() || null,
