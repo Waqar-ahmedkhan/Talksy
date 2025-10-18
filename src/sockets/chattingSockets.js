@@ -8,6 +8,7 @@ import Profile from "../models/Profile.js";
 import Contact from "../models/Contact.js";
 import jwt from "jsonwebtoken";
 import moment from "moment-timezone";
+import validator from "validator";
 
 const logTimestamp = () =>
   moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
