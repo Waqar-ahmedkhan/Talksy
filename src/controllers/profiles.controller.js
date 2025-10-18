@@ -3,6 +3,7 @@ import Profile from "../models/Profile.js";
 import User from "../models/User.js";
 import Chat from "../models/Chat.js";
 import Contact from "../models/Contact.js";
+import Block from "../models/Block.js";
 
 export const authenticateToken = async (req, res, next) => {
   try {
