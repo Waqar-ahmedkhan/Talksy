@@ -5,6 +5,7 @@ import Block from "../models/Block.js";
 import Group from "../models/Group.js";
 import Channel from "../models/Channel.js";
 import Profile from "../models/Profile.js";
+import Contact from "../model/Contact.js";
 import jwt from "jsonwebtoken";
 import moment from "moment-timezone";
 
