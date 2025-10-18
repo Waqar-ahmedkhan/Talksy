@@ -188,7 +188,8 @@ export const formatProfile = (
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
-    avatarUrl: validator.escape(profile?.avatarUrl || ""),
+   avatarUrl: profile?.avatarUrl || "",
+
     fcmToken: profile?.fcmToken || user?.fcmToken || "",
     createdAt: profile?.createdAt?.toISOString() || null,
     online: user?.online ?? false,
@@ -321,7 +322,10 @@ export const createProfile = async (req, res) => {
 
     // Sanitize inputs
     const sanitizedDisplayName = validator.escape(displayName.trim());
-    const sanitizedAvatarUrl = validator.escape(avatarUrl.trim());
+    const sanitizedAvatarUrl = validator.isURL(avatarUrl.trim())
+      ? avatarUrl.trim()
+      : "";
+
     const sanitizedFcmToken = fcmToken ? validator.escape(fcmToken.trim()) : "";
 
     // Check for existing profile
@@ -1599,7 +1603,8 @@ export const getChatList = async (req, res) => {
             displayName,
             customName,
             randomNumber: otherProfile.randomNumber || "",
-            avatarUrl: validator.escape(otherProfile.avatarUrl || ""),
+            validator.escape(profile?.avatarUrl || "")
+
             online: userMap.get(otherPhone)?.online || false,
             lastSeen: userMap.get(otherPhone)?.lastSeen?.toISOString() || null,
             fcmToken:
