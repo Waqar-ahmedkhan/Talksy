@@ -1503,6 +1503,136 @@ export const initChatSocket = (server) => {
       }
     });
 
+    /** Get blocked users */
+    socket.on(
+      "get_blocked_users",
+      async ({ userPhone, page = 1, limit = 20 }, callback) => {
+        const timestamp = moment()
+          .tz("Asia/Karachi")
+          .format("DD/MM/YYYY, hh:mm:ss a");
+        try {
+          if (
+            !userPhone ||
+            normalizePhoneNumber(userPhone) !==
+              normalizePhoneNumber(socket.phone) ||
+            page < 1 ||
+            limit < 1 ||
+            limit > 100
+          ) {
+            console.error(
+              `[get_blocked_users] Invalid user phone or pagination parameters at ${timestamp}`,
+              { userPhone, page, limit, socketPhone: socket.phone }
+            );
+            socket.emit("blocked_users_error", {
+              error: "Invalid user phone or pagination parameters",
+            });
+            if (callback)
+              callback({
+                error: "Invalid user phone or pagination parameters",
+              });
+            return;
+          }
+
+          const normalizedPhone = normalizePhoneNumber(userPhone);
+          const skip = (page - 1) * limit;
+
+          const myProfile = await Profile.findOne({ phone: normalizedPhone });
+          if (!myProfile) {
+            console.error(
+              `[get_blocked_users] Profile not found: phone=${normalizedPhone} at ${timestamp}`
+            );
+            socket.emit("blocked_users_error", {
+              error: "Your profile not found",
+            });
+            if (callback) callback({ error: "Your profile not found" });
+            return;
+          }
+
+          const blocked = await Block.find({ blockerId: myProfile._id })
+            .populate(
+              "blockedId",
+              "phone displayName isVisible isNumberVisible avatarUrl randomNumber createdAt"
+            )
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+          console.log(
+            `[get_blocked_users] Found ${blocked.length} blocked users at ${timestamp}`
+          );
+
+          const phoneNumbers = blocked.map((b) => b.blockedId.phone);
+          const users = await User.find({
+            phone: { $in: phoneNumbers },
+          }).select("phone online lastSeen");
+          const userMap = new Map(users.map((u) => [u.phone, u]));
+
+          const contacts = await Contact.find({
+            userId: myProfile._id,
+            phone: { $in: phoneNumbers },
+          }).select("phone customName");
+          const contactMap = new Map(
+            contacts.map((c) => [c.phone, c.customName || null])
+          );
+
+          const blockedProfiles = blocked.map((block) => {
+            const profile = block.blockedId;
+            const user = userMap.get(profile.phone);
+            const customName = contactMap.get(profile.phone);
+            return {
+              id: profile._id.toString(),
+              userId: user?._id.toString() || null,
+              phone: profile.phone,
+              displayName:
+                customName || profile.displayName || profile.phone || "Unknown",
+              randomNumber: profile.randomNumber || "",
+              isVisible: profile.isVisible ?? false,
+              isNumberVisible: profile.isNumberVisible ?? false,
+              avatarUrl: profile.avatarUrl || "",
+              fcmToken: profile.fcmToken || "",
+              createdAt: profile.createdAt?.toISOString() || null,
+              online: user?.online ?? false,
+              lastSeen: user?.lastSeen?.toISOString() || null,
+              customName: customName || null,
+              isBlocked: true, // Always true for blocked users
+            };
+          });
+
+          console.log(
+            `[get_blocked_users] Response ready: total=${blocked.length}, profiles=${blockedProfiles.length} at ${timestamp}`
+          );
+          socket.emit("blocked_users_success", {
+            success: true,
+            page,
+            limit,
+            total: blocked.length,
+            blockedUsers: blockedProfiles,
+          });
+          if (callback)
+            callback({
+              success: true,
+              page,
+              limit,
+              total: blocked.length,
+              blockedUsers: blockedProfiles,
+            });
+        } catch (err) {
+          console.error(
+            `❌ Get blocked users error: ${err.message} at ${timestamp}`,
+            {
+              userPhone,
+              page,
+              limit,
+            }
+          );
+          socket.emit("blocked_users_error", {
+            error: "Failed to retrieve blocked users",
+          });
+          if (callback) callback({ error: "Failed to retrieve blocked users" });
+        }
+      }
+    );
+
     /** Disconnect */
     socket.on("disconnect", async () => {
       const timestamp = moment()
