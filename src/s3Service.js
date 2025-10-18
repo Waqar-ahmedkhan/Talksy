@@ -1,5 +1,10 @@
 // src/s3Service.js
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Initialize the S3Client
@@ -33,7 +38,9 @@ export const getFileUrl = async (fileName) => {
   };
 
   const command = new GetObjectCommand(params);
-  const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
+  const url = await getSignedUrl(s3Client, command, {
+    expiresIn: 60 * 60 * 24 * 7,
+  }); // 7 days
   return url;
 };
 
