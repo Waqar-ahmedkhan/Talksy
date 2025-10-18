@@ -1524,159 +1524,150 @@ export const initChatSocket = (server) => {
       }
     });
 
-    export default (io, socket, onlineUsers) => {
-      // Unblock user
-      socket.on(
-        "unblock_user",
-        async ({ userPhone, targetPhone }, callback) => {
-          const timestamp = logTimestamp();
-          try {
-            console.log(
-              `[unblock_user] Processing request: userPhone=${userPhone}, targetPhone=${targetPhone}, socketPhone=${socket.phone} at ${timestamp}`
-            );
+    // Unblock user
+    socket.on("unblock_user", async ({ userPhone, targetPhone }, callback) => {
+      const timestamp = logTimestamp();
+      try {
+        console.log(
+          `[unblock_user] Processing request: userPhone=${userPhone}, targetPhone=${targetPhone}, socketPhone=${socket.phone} at ${timestamp}`
+        );
 
-            // Validate input
-            if (
-              !userPhone ||
-              !targetPhone ||
-              normalizePhoneNumber(userPhone) !==
-                normalizePhoneNumber(socket.phone) ||
-              normalizePhoneNumber(userPhone) ===
-                normalizePhoneNumber(targetPhone)
-            ) {
-              console.error(
-                `❌ [unblock_user] Invalid user or target phone at ${timestamp}`,
-                {
-                  userPhone,
-                  targetPhone,
-                  socketPhone: socket.phone,
-                }
-              );
-              socket.emit("unblock_error", {
-                success: false,
-                error: "Invalid user or target phone",
-              });
-              if (callback)
-                callback({
-                  success: false,
-                  error: "Invalid user or target phone",
-                });
-              return;
+        // Validate input
+        if (
+          !userPhone ||
+          !targetPhone ||
+          normalizePhoneNumber(userPhone) !==
+            normalizePhoneNumber(socket.phone) ||
+          normalizePhoneNumber(userPhone) === normalizePhoneNumber(targetPhone)
+        ) {
+          console.error(
+            `❌ [unblock_user] Invalid user or target phone at ${timestamp}`,
+            {
+              userPhone,
+              targetPhone,
+              socketPhone: socket.phone,
             }
-
-            // Fetch profiles concurrently
-            const [blockerProfile, blockedProfile] = await Promise.all([
-              Profile.findOne({ phone: normalizePhoneNumber(userPhone) }),
-              Profile.findOne({ phone: normalizePhoneNumber(targetPhone) }),
-            ]);
-
-            if (!blockerProfile || !blockedProfile) {
-              console.error(
-                `❌ [unblock_user] Profile not found: userPhone=${normalizePhoneNumber(
-                  userPhone
-                )}, targetPhone=${normalizePhoneNumber(
-                  targetPhone
-                )} at ${timestamp}`
-              );
-              socket.emit("unblock_error", {
-                success: false,
-                error: "Profile not found",
-              });
-              if (callback)
-                callback({ success: false, error: "Profile not found" });
-              return;
-            }
-
-            // Attempt to delete the block
-            const result = await Block.deleteOne({
-              blockerId: blockerProfile._id,
-              blockedId: blockedProfile._id,
-            });
-
-            if (result.deletedCount === 0) {
-              console.log(
-                `[unblock_user] Block not found: blockerId=${blockerProfile._id}, blockedId=${blockedProfile._id} at ${timestamp}`
-              );
-              socket.emit("unblock_error", {
-                success: false,
-                error: "Block not found",
-              });
-              if (callback)
-                callback({ success: false, error: "Block not found" });
-              return;
-            }
-
-            console.log(
-              `[unblock_user] User unblocked: blockerId=${blockerProfile._id}, blockedId=${blockedProfile._id} at ${timestamp}`
-            );
-
-            // Notify the unblocked user if online
-            const blockedUser = await User.findOne({
-              phone: normalizePhoneNumber(targetPhone),
-            });
-            const unblockedSocket = onlineUsers.get(
-              blockedProfile._id.toString()
-            );
-            if (unblockedSocket && blockedUser) {
-              io.to(unblockedSocket).emit("blocked_update", {
-                blockerId: blockerProfile._id.toString(),
-                blocked: false,
-              });
-              console.log(
-                `[unblock_user] Notified unblocked user: blockedId=${blockedProfile._id} at ${timestamp}`
-              );
-            }
-
-            // Fetch contact for custom name
-            const contact = await Contact.findOne({
-              userId: blockerProfile._id,
-              phone: normalizePhoneNumber(targetPhone),
-            }).select("customName");
-            const customName = contact?.customName
-              ? validator.escape(contact.customName)
-              : null;
-            console.log(
-              `[unblock_user] Custom name for phone=${normalizePhoneNumber(
-                targetPhone
-              )}: ${customName} at ${timestamp}`
-            );
-
-            // Return formatted profile
-            const response = {
-              success: true,
-              unblockedUser: formatProfile(
-                blockedProfile,
-                blockedUser,
-                customName,
-                false
-              ),
-            };
-
-            socket.emit("unblock_success", response);
-            if (callback) callback(response);
-          } catch (err) {
-            console.error(
-              `❌ [unblock_user] Error: ${err.message} at ${timestamp}`,
-              {
-                userPhone,
-                targetPhone,
-              }
-            );
-            socket.emit("unblock_error", {
+          );
+          socket.emit("unblock_error", {
+            success: false,
+            error: "Invalid user or target phone",
+          });
+          if (callback)
+            callback({
               success: false,
-              error: "Failed to unblock user",
-              details: err.message,
+              error: "Invalid user or target phone",
             });
-            if (callback)
-              callback({
-                success: false,
-                error: "Failed to unblock user",
-                details: err.message,
-              });
-          }
+          return;
         }
-      );
-    };
+
+        // Fetch profiles concurrently
+        const [blockerProfile, blockedProfile] = await Promise.all([
+          Profile.findOne({ phone: normalizePhoneNumber(userPhone) }),
+          Profile.findOne({ phone: normalizePhoneNumber(targetPhone) }),
+        ]);
+
+        if (!blockerProfile || !blockedProfile) {
+          console.error(
+            `❌ [unblock_user] Profile not found: userPhone=${normalizePhoneNumber(
+              userPhone
+            )}, targetPhone=${normalizePhoneNumber(
+              targetPhone
+            )} at ${timestamp}`
+          );
+          socket.emit("unblock_error", {
+            success: false,
+            error: "Profile not found",
+          });
+          if (callback)
+            callback({ success: false, error: "Profile not found" });
+          return;
+        }
+
+        // Attempt to delete the block
+        const result = await Block.deleteOne({
+          blockerId: blockerProfile._id,
+          blockedId: blockedProfile._id,
+        });
+
+        if (result.deletedCount === 0) {
+          console.log(
+            `[unblock_user] Block not found: blockerId=${blockerProfile._id}, blockedId=${blockedProfile._id} at ${timestamp}`
+          );
+          socket.emit("unblock_error", {
+            success: false,
+            error: "Block not found",
+          });
+          if (callback) callback({ success: false, error: "Block not found" });
+          return;
+        }
+
+        console.log(
+          `[unblock_user] User unblocked: blockerId=${blockerProfile._id}, blockedId=${blockedProfile._id} at ${timestamp}`
+        );
+
+        // Notify the unblocked user if online
+        const blockedUser = await User.findOne({
+          phone: normalizePhoneNumber(targetPhone),
+        });
+        const unblockedSocket = onlineUsers.get(blockedProfile._id.toString());
+        if (unblockedSocket && blockedUser) {
+          io.to(unblockedSocket).emit("blocked_update", {
+            blockerId: blockerProfile._id.toString(),
+            blocked: false,
+          });
+          console.log(
+            `[unblock_user] Notified unblocked user: blockedId=${blockedProfile._id} at ${timestamp}`
+          );
+        }
+
+        // Fetch contact for custom name
+        const contact = await Contact.findOne({
+          userId: blockerProfile._id,
+          phone: normalizePhoneNumber(targetPhone),
+        }).select("customName");
+        const customName = contact?.customName
+          ? validator.escape(contact.customName)
+          : null;
+        console.log(
+          `[unblock_user] Custom name for phone=${normalizePhoneNumber(
+            targetPhone
+          )}: ${customName} at ${timestamp}`
+        );
+
+        // Return formatted profile
+        const response = {
+          success: true,
+          unblockedUser: formatProfile(
+            blockedProfile,
+            blockedUser,
+            customName,
+            false
+          ),
+        };
+
+        socket.emit("unblock_success", response);
+        if (callback) callback(response);
+      } catch (err) {
+        console.error(
+          `❌ [unblock_user] Error: ${err.message} at ${timestamp}`,
+          {
+            userPhone,
+            targetPhone,
+          }
+        );
+        socket.emit("unblock_error", {
+          success: false,
+          error: "Failed to unblock user",
+          details: err.message,
+        });
+        if (callback)
+          callback({
+            success: false,
+            error: "Failed to unblock user",
+            details: err.message,
+          });
+      }
+    });
 
     /** Get blocked users */
     socket.on(
