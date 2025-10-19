@@ -214,10 +214,7 @@ const formatChat = (chat) => {
     senderId: chat?.senderId?._id?.toString() || null,
     receiverId: chat?.receiverId?._id?.toString() || null,
     type: chat?.type || "text",
-    content: validator.escape(
-      chat?.content?.substring(0, 50) +
-        (chat?.content?.length > 50 ? "..." : "") || ""
-    ),
+    content: isUrl ? truncatedContent : validator.escape(truncatedContent), // S 
     duration: chat?.duration || null,
     fileName: validator.escape(chat?.fileName || ""),
     status: chat?.status || "sent",

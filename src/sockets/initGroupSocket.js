@@ -21,7 +21,7 @@ export const normalizePhoneNumber = (phone) => {
   }
   let normalized = phone.trim().replace(/[\s-]/g, "");
   if (!normalized.startsWith("+") && /^\d{10}$/.test(normalized)) {
-    normalized = `+92${normalized}`;
+    normalized = `+92${normalized}`; // Default to Pakistan country code
   }
   console.log(
     `[normalizePhoneNumber] Normalized: ${phone} -> ${normalized} at ${timestamp}`
