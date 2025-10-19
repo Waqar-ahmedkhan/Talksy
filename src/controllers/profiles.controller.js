@@ -205,27 +205,30 @@ export const formatProfile = (
 };
 
 // Format chat for response
-const formatChat = (chat) => {
-  const timestamp = logTimestamp();
-  const chatId = chat?._id?.toString() || "unknown";
-  console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
-  const formatted = {
-    id: chatId,
-    senderId: chat?.senderId?._id?.toString() || null,
-    receiverId: chat?.receiverId?._id?.toString() || null,
-    type: chat?.type || "text",
-    content: isUrl ? truncatedContent : validator.escape(truncatedContent), // S 
-    duration: chat?.duration || null,
-    fileName: validator.escape(chat?.fileName || ""),
-    status: chat?.status || "sent",
-    createdAt: chat?.createdAt?.toISOString() || null,
-    pinned: chat?.pinned || false,
-  };
-  console.log(
-    `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content} at ${timestamp}`
-  );
-  return formatted;
-};
+// const formatChat = (chat) => {
+//   const timestamp = logTimestamp();
+//   const chatId = chat?._id?.toString() || "unknown";
+//   console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
+//   const formatted = {
+//     id: chatId,
+//     senderId: chat?.senderId?._id?.toString() || null,
+//     receiverId: chat?.receiverId?._id?.toString() || null,
+//     type: chat?.type || "text",
+//     content: isUrl ? truncatedContent : validator.escape(truncatedContent), // S 
+//     duration: chat?.duration || null,
+//     fileName: validator.escape(chat?.fileName || ""),
+//     status: chat?.status || "sent",
+//     createdAt: chat?.createdAt?.toISOString() || null,
+//     pinned: chat?.pinned || false,
+//   };
+//   console.log(
+//     `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content} at ${timestamp}`
+//   );
+//   return formatted;
+// };
+
+
+
 
 // Create or update user profile
 export const createProfile = async (req, res) => {
