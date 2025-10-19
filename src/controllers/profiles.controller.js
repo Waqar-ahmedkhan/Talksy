@@ -227,7 +227,34 @@ export const formatProfile = (
 //   return formatted;
 // };
 
+const formatChat = (chat) => {
+  const timestamp = logTimestamp();
+  const chatId = chat?._id?.toString() || "unknown";
+  console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
 
+  // Check if content is a URL
+  const content = chat?.content || "";
+  const isUrl = validator.isURL(content); // Define isUrl using validator.isURL
+  const truncatedContent =
+    content.length > 50 ? `${content.substring(0, 50)}...` : content;
+
+  const formatted = {
+    id: chatId,
+    senderId: chat?.senderId?._id?.toString() || null,
+    receiverId: chat?.receiverId?._id?.toString() || null,
+    type: chat?.type || "text",
+    content: isUrl ? truncatedContent : validator.escape(truncatedContent), // Skip escaping for URLs
+    duration: chat?.duration || null,
+    fileName: validator.escape(chat?.fileName || ""),
+    status: chat?.status || "sent",
+    createdAt: chat?.createdAt?.toISOString() || null,
+    pinned: chat?.pinned || false,
+  };
+  console.log(
+    `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content}, isUrl=${isUrl} at ${timestamp}`
+  );
+  return formatted;
+};
 
 
 // Create or update user profile
