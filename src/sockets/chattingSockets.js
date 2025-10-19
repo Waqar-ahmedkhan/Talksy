@@ -53,7 +53,6 @@ export const formatProfile = (
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
     avatarUrl: profile?.avatarUrl || "",
-
     fcmToken: profile?.fcmToken || user?.fcmToken || "",
     createdAt: profile?.createdAt?.toISOString() || null,
     online: user?.online ?? false,
