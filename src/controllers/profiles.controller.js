@@ -214,7 +214,7 @@ export const formatProfile = (
 //     senderId: chat?.senderId?._id?.toString() || null,
 //     receiverId: chat?.receiverId?._id?.toString() || null,
 //     type: chat?.type || "text",
-//     content: isUrl ? truncatedContent : validator.escape(truncatedContent), // S 
+//     content: isUrl ? truncatedContent : validator.escape(truncatedContent), // S
 //     duration: chat?.duration || null,
 //     fileName: validator.escape(chat?.fileName || ""),
 //     status: chat?.status || "sent",
@@ -227,6 +227,7 @@ export const formatProfile = (
 //   return formatted;
 // };
 
+// Format chat for response
 const formatChat = (chat) => {
   const timestamp = logTimestamp();
   const chatId = chat?._id?.toString() || "unknown";
@@ -235,15 +236,16 @@ const formatChat = (chat) => {
   // Check if content is a URL
   const content = chat?.content || "";
   const isUrl = validator.isURL(content); // Define isUrl using validator.isURL
-  const truncatedContent =
-    content.length > 50 ? `${content.substring(0, 50)}...` : content;
+  const displayContent =
+    content.length > 50 ? `${content.substring(0, 50)}...` : content; // Truncate for display only
 
   const formatted = {
     id: chatId,
     senderId: chat?.senderId?._id?.toString() || null,
     receiverId: chat?.receiverId?._id?.toString() || null,
     type: chat?.type || "text",
-    content: isUrl ? truncatedContent : validator.escape(truncatedContent), // Skip escaping for URLs
+    content: isUrl ? content : validator.escape(content), // Use full content, escape only non-URLs
+    displayContent: isUrl ? content : validator.escape(displayContent), // Truncated for display
     duration: chat?.duration || null,
     fileName: validator.escape(chat?.fileName || ""),
     status: chat?.status || "sent",
@@ -255,7 +257,6 @@ const formatChat = (chat) => {
   );
   return formatted;
 };
-
 
 // Create or update user profile
 export const createProfile = async (req, res) => {
