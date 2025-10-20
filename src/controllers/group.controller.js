@@ -6,14 +6,41 @@ import User from "../models/User.js";
 import Profile from "../models/Profile.js";
 import Contact from "../models/Contact.js";
 import Block from "../models/Block.js";
-
 import moment from "moment-timezone";
 
 // Utility for consistent timestamp logging
 const logTimestamp = () =>
   moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
 
-// Format chat message for response (adapted from existing formatChat)
+// Format profile for response
+const formatProfile = (profile, user, customName = null, isBlocked = false) => {
+  const timestamp = logTimestamp();
+  const phone = profile?.phone || "";
+  const name = customName || profile?.displayName || "Unknown";
+  const displayName = name && phone ? name : name || phone || "Unknown";
+  const formatted = {
+    id: profile?._id?.toString() || null,
+    userId: user?._id?.toString() || null,
+    phone,
+    displayName,
+    randomNumber: profile?.randomNumber || "",
+    isVisible: profile?.isVisible ?? false,
+    isNumberVisible: profile?.isNumberVisible ?? false,
+    avatarUrl: profile?.avatarUrl || "",
+    fcmToken: profile?.fcmToken || user?.fcmToken || "",
+    createdAt: profile?.createdAt?.toISOString() || null,
+    online: user?.online ?? false,
+    lastSeen: user?.lastSeen?.toISOString() || null,
+    customName: customName || null,
+    isBlocked,
+  };
+  console.log(
+    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked}, timestamp=${timestamp}`
+  );
+  return formatted;
+};
+
+// Format chat message for response
 const formatChat = (chat, userId) => {
   const timestamp = logTimestamp();
   const isUrl =
@@ -46,7 +73,7 @@ const formatChat = (chat, userId) => {
   return formatted;
 };
 
-// POST /api/groups/chats
+// GET /api/groups/chats
 export const getGroupChatList = async (req, res) => {
   const timestamp = logTimestamp();
   const userId = req.user?._id?.toString();
