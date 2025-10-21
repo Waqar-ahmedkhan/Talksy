@@ -228,32 +228,68 @@ export const formatProfile = (
 // };
 
 // Format chat for response
+// const formatChat = (chat) => {
+//   const timestamp = logTimestamp();
+//   const chatId = chat?._id?.toString() || "unknown";
+//   console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
+
+//   // Check if content is a URL
+//   const content = chat?.content || "";
+//   const isUrl = validator.isURL(content); // Define isUrl using validator.isURL
+//   const displayContent =
+//     content.length > 50 ? `${content.substring(0, 50)}...` : content; // Truncate for display only
+
+//   const formatted = {
+//     id: chatId,
+//     senderId: chat?.senderId?._id?.toString() || null,
+//     receiverId: chat?.receiverId?._id?.toString() || null,
+//     type: chat?.type || "text",
+//     content: isUrl ? content : validator.escape(content), // Use full content, escape only non-URLs
+//     displayContent: isUrl ? content : validator.escape(displayContent), // Truncated for display
+//     duration: chat?.duration || null,
+//     fileName: validator.escape(chat?.fileName || ""),
+//     status: chat?.status || "sent",
+//     createdAt: chat?.createdAt?.toISOString() || null,
+//     pinned: chat?.pinned || false,
+//   };
+//   console.log(
+//     `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content}, isUrl=${isUrl} at ${timestamp}`
+//   );
+//   return formatted;
+// };
+
 const formatChat = (chat) => {
   const timestamp = logTimestamp();
   const chatId = chat?._id?.toString() || "unknown";
-  console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
+  console.log(
+    `[formatChat] Formatting chat: id=${chatId}, type=${chat?.type} at ${timestamp}`
+  );
 
-  // Check if content is a URL
   const content = chat?.content || "";
-  const isUrl = validator.isURL(content); // Define isUrl using validator.isURL
   const displayContent =
-    content.length > 50 ? `${content.substring(0, 50)}...` : content; // Truncate for display only
+    content.length > 100 ? `${content.substring(0, 100)}...` : content;
 
   const formatted = {
     id: chatId,
     senderId: chat?.senderId?._id?.toString() || null,
     receiverId: chat?.receiverId?._id?.toString() || null,
     type: chat?.type || "text",
-    content: isUrl ? content : validator.escape(content), // Use full content, escape only non-URLs
-    displayContent: isUrl ? content : validator.escape(displayContent), // Truncated for display
+    content: content, // COMPLETE URL - NO VALIDATION, NO ESCAPING
+    displayContent: displayContent, // COMPLETE URL for display OR truncated text
     duration: chat?.duration || null,
-    fileName: validator.escape(chat?.fileName || ""),
+    fileName: chat?.fileName || "",
+    mimeType: chat?.mimeType || null,
     status: chat?.status || "sent",
     createdAt: chat?.createdAt?.toISOString() || null,
     pinned: chat?.pinned || false,
   };
+
   console.log(
-    `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content}, isUrl=${isUrl} at ${timestamp}`
+    `[formatChat] Formatted: id=${chatId}, type=${
+      formatted.type
+    }, content=${formatted.content.substring(0, 50)}${
+      formatted.content.length > 50 ? "..." : ""
+    } at ${timestamp}`
   );
   return formatted;
 };
