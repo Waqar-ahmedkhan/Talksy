@@ -520,9 +520,125 @@ export const initChatSocket = (server) => {
     });
 
     /** Send voice message */
+    // socket.on(
+    //   "send_voice",
+    //   async ({ senderId, receiverId, content, duration }, callback) => {
+    //     const timestamp = moment()
+    //       .tz("Asia/Karachi")
+    //       .format("DD/MM/YYYY, hh:mm:ss a");
+    //     try {
+    //       if (
+    //         !senderId ||
+    //         !receiverId ||
+    //         !content ||
+    //         typeof content !== "string" ||
+    //         content.trim() === "" ||
+    //         senderId !== socket.userId ||
+    //         typeof duration !== "number" ||
+    //         duration <= 0 ||
+    //         duration > 180
+    //       ) {
+    //         socket.emit("voice_error", {
+    //           error: "Invalid voice data or duration (max 3 minutes)",
+    //         });
+    //         if (callback) callback({ error: "Invalid voice data or duration" });
+    //         return;
+    //       }
+
+    //       const senderProfile = await Profile.findById(senderId);
+    //       let receiverProfile = await Profile.findById(receiverId);
+    //       if (!senderProfile || !receiverProfile) {
+    //         if (!receiverProfile) {
+    //           const user = await User.findById(receiverId);
+    //           if (user) {
+    //             receiverProfile = await Profile.findOne({ phone: user.phone });
+    //             if (!receiverProfile) {
+    //               receiverProfile = await Profile.create({
+    //                 phone: user.phone,
+    //                 displayName: user.displayName,
+    //                 randomNumber: Math.random().toString(36).substring(2, 10),
+    //                 isVisible: false,
+    //                 isNumberVisible: false,
+    //                 avatarUrl: "",
+    //               });
+    //             }
+    //             receiverId = receiverProfile._id.toString();
+    //           } else {
+    //             socket.emit("voice_error", {
+    //               error: "Receiver profile not found",
+    //             });
+    //             if (callback) callback({ error: "Receiver profile not found" });
+    //             return;
+    //           }
+    //         } else {
+    //           socket.emit("voice_error", { error: "Sender profile not found" });
+    //           if (callback) callback({ error: "Sender profile not found" });
+    //           return;
+    //         }
+    //       }
+
+    //       const blocked = await Block.findOne({
+    //         $or: [
+    //           { blockerId: receiverId, blockedId: senderId },
+    //           { blockerId: senderId, blockedId: receiverId },
+    //         ],
+    //       });
+    //       if (blocked) {
+    //         socket.emit("voice_error", { error: "User is blocked" });
+    //         if (callback) callback({ error: "User is blocked" });
+    //         return;
+    //       }
+
+    //       const chat = await Chat.create({
+    //         senderId,
+    //         receiverId,
+    //         type: "voice",
+    //         content,
+    //         duration,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+
+    //       const voiceData = {
+    //         id: chat._id.toString(),
+    //         senderId: chat.senderId.toString(),
+    //         receiverId: chat.receiverId.toString(),
+    //         content: chat.content,
+    //         type: chat.type,
+    //         timestamp: chat.createdAt.toISOString(),
+    //         status: chat.status,
+    //         duration: chat.duration || 0,
+    //       };
+
+    //       socket.emit("voice_sent", voiceData);
+    //       const receiverSocket = onlineUsers.get(receiverId);
+    //       if (receiverSocket) {
+    //         io.to(receiverSocket).emit("receive_voice", voiceData);
+    //         chat.status = "delivered";
+    //         await chat.save();
+    //         voiceData.status = "delivered";
+    //       }
+
+    //       if (callback)
+    //         callback({ status: "success", id: chat._id.toString() });
+    //     } catch (err) {
+    //       console.error(`❌ Send voice error: ${err.message} at ${timestamp}`, {
+    //         senderId,
+    //         receiverId,
+    //       });
+    //       socket.emit("voice_error", { error: "Failed to send voice message" });
+    //       if (callback) callback({ error: "Failed to send voice message" });
+    //     }
+    //   }
+    // );
+
+    /** Send voice message */
     socket.on(
       "send_voice",
-      async ({ senderId, receiverId, content, duration }, callback) => {
+      async (
+        { senderId, receiverId, content, duration, fileType, fileName },
+        callback
+      ) => {
         const timestamp = moment()
           .tz("Asia/Karachi")
           .format("DD/MM/YYYY, hh:mm:ss a");
@@ -536,45 +652,36 @@ export const initChatSocket = (server) => {
             senderId !== socket.userId ||
             typeof duration !== "number" ||
             duration <= 0 ||
-            duration > 180
+            duration > 180 ||
+            !fileType?.startsWith("audio/")
           ) {
+            console.error(
+              `❌ [send_voice] Invalid data: senderId=${senderId}, receiverId=${receiverId}, content=${content}, duration=${duration}, fileType=${fileType} at ${timestamp}`
+            );
             socket.emit("voice_error", {
-              error: "Invalid voice data or duration (max 3 minutes)",
+              error:
+                "Invalid voice data, duration (max 3 minutes), or fileType (must be audio/*)",
             });
             if (callback) callback({ error: "Invalid voice data or duration" });
             return;
           }
 
-          const senderProfile = await Profile.findById(senderId);
-          let receiverProfile = await Profile.findById(receiverId);
+          const [senderProfile, receiverProfile] = await Promise.all([
+            Profile.findById(senderId),
+            Profile.findById(receiverId),
+          ]);
+
           if (!senderProfile || !receiverProfile) {
-            if (!receiverProfile) {
-              const user = await User.findById(receiverId);
-              if (user) {
-                receiverProfile = await Profile.findOne({ phone: user.phone });
-                if (!receiverProfile) {
-                  receiverProfile = await Profile.create({
-                    phone: user.phone,
-                    displayName: user.displayName,
-                    randomNumber: Math.random().toString(36).substring(2, 10),
-                    isVisible: false,
-                    isNumberVisible: false,
-                    avatarUrl: "",
-                  });
-                }
-                receiverId = receiverProfile._id.toString();
-              } else {
-                socket.emit("voice_error", {
-                  error: "Receiver profile not found",
-                });
-                if (callback) callback({ error: "Receiver profile not found" });
-                return;
-              }
-            } else {
-              socket.emit("voice_error", { error: "Sender profile not found" });
-              if (callback) callback({ error: "Sender profile not found" });
-              return;
-            }
+            console.error(
+              `❌ [send_voice] Profile not found: senderId=${senderId}, receiverId=${receiverId} at ${timestamp}`
+            );
+            socket.emit("voice_error", {
+              error: senderProfile
+                ? "Receiver profile not found"
+                : "Sender profile not found",
+            });
+            if (callback) callback({ error: "Profile not found" });
+            return;
           }
 
           const blocked = await Block.findOne({
@@ -584,6 +691,9 @@ export const initChatSocket = (server) => {
             ],
           });
           if (blocked) {
+            console.error(
+              `❌ [send_voice] User is blocked: senderId=${senderId}, receiverId=${receiverId} at ${timestamp}`
+            );
             socket.emit("voice_error", { error: "User is blocked" });
             if (callback) callback({ error: "User is blocked" });
             return;
@@ -594,6 +704,8 @@ export const initChatSocket = (server) => {
             receiverId,
             type: "voice",
             content,
+            fileType,
+            fileName: fileName || undefined,
             duration,
             status: "sent",
             deletedFor: [],
@@ -605,9 +717,11 @@ export const initChatSocket = (server) => {
             receiverId: chat.receiverId.toString(),
             content: chat.content,
             type: chat.type,
+            fileType: chat.fileType,
+            fileName: chat.fileName,
+            duration: chat.duration || 0,
             timestamp: chat.createdAt.toISOString(),
             status: chat.status,
-            duration: chat.duration || 0,
           };
 
           socket.emit("voice_sent", voiceData);
@@ -619,19 +733,24 @@ export const initChatSocket = (server) => {
             voiceData.status = "delivered";
           }
 
+          console.log(
+            `[send_voice] Voice message saved: id=${chat._id}, fileType=${fileType} at ${timestamp}`
+          );
           if (callback)
             callback({ status: "success", id: chat._id.toString() });
         } catch (err) {
-          console.error(`❌ Send voice error: ${err.message} at ${timestamp}`, {
-            senderId,
-            receiverId,
-          });
+          console.error(
+            `❌ [send_voice] Error: ${err.message} at ${timestamp}`,
+            {
+              senderId,
+              receiverId,
+            }
+          );
           socket.emit("voice_error", { error: "Failed to send voice message" });
           if (callback) callback({ error: "Failed to send voice message" });
         }
       }
     );
-
     /** Send media (images, videos, documents) */
     socket.on(
       "send_media",
