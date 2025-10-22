@@ -228,34 +228,73 @@ export const formatProfile = (
 // };
 
 // Format chat for response
+// const formatChat = (chat) => {
+//   const timestamp = logTimestamp();
+//   const chatId = chat?._id?.toString() || "unknown";
+//   console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
+
+//   // Check if content is a URL
+//   const content = chat?.content || "";
+//   const isUrl = validator.isURL(content); // Define isUrl using validator.isURL
+//   const displayContent =
+//     content.length > 50 ? `${content.substring(0, 50)}...` : content; // Truncate for display only
+
+//   const formatted = {
+//     id: chatId,
+//     senderId: chat?.senderId?._id?.toString() || null,
+//     receiverId: chat?.receiverId?._id?.toString() || null,
+//     type: chat?.type || "text",
+//     content: isUrl ? content : validator.escape(content), // Use full content, escape only non-URLs
+//     displayContent: isUrl ? content : validator.escape(displayContent), // Truncated for display
+//     duration: chat?.duration || null,
+//     fileName: validator.escape(chat?.fileName || ""),
+//     status: chat?.status || "sent",
+//     createdAt: chat?.createdAt?.toISOString() || null,
+//     pinned: chat?.pinned || false,
+//   };
+//   console.log(
+//     `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content}, isUrl=${isUrl} at ${timestamp}`
+//   );
+//   return formatted;
+// };
+
 const formatChat = (chat) => {
-  const timestamp = logTimestamp();
-  const chatId = chat?._id?.toString() || "unknown";
-  console.log(`[formatChat] Formatting chat: id=${chatId} at ${timestamp}`);
+  const timestamp = moment()
+    .tz("Asia/Karachi")
+    .format("DD/MM/YYYY, hh:mm:ss a");
+  try {
+    const isAudio =
+      chat.content.includes(".m4a") ||
+      (chat.fileType && chat.fileType.startsWith("audio/"));
+    const chatType = isAudio ? "voice" : chat.type;
 
-  // Check if content is a URL
-  const content = chat?.content || "";
-  const isUrl = validator.isURL(content); // Define isUrl using validator.isURL
-  const displayContent =
-    content.length > 50 ? `${content.substring(0, 50)}...` : content; // Truncate for display only
+    console.log(
+      `[formatChat] Formatting chat: id=${chat._id}, originalType=${chat.type}, newType=${chatType}, content=${chat.content} at ${timestamp}`
+    );
 
-  const formatted = {
-    id: chatId,
-    senderId: chat?.senderId?._id?.toString() || null,
-    receiverId: chat?.receiverId?._id?.toString() || null,
-    type: chat?.type || "text",
-    content: isUrl ? content : validator.escape(content), // Use full content, escape only non-URLs
-    displayContent: isUrl ? content : validator.escape(displayContent), // Truncated for display
-    duration: chat?.duration || null,
-    fileName: validator.escape(chat?.fileName || ""),
-    status: chat?.status || "sent",
-    createdAt: chat?.createdAt?.toISOString() || null,
-    pinned: chat?.pinned || false,
-  };
-  console.log(
-    `[formatChat] Formatted chat: id=${chatId}, type=${formatted.type}, content=${formatted.content}, isUrl=${isUrl} at ${timestamp}`
-  );
-  return formatted;
+    return {
+      id: chat._id.toString(),
+      senderId: chat.senderId?._id?.toString() || null,
+      receiverId: chat.receiverId?._id?.toString() || null,
+      groupId: chat.groupId?.toString() || null,
+      channelId: chat.channelId?.toString() || null,
+      type: chatType,
+      content: chat.content,
+      displayContent:
+        chat.type === "text" && chat.content.length > 50
+          ? `${chat.content.slice(0, 50)}...`
+          : chat.content,
+      fileType: chat.fileType || (isAudio ? "audio/mp4" : null),
+      fileName: chat.fileName || "",
+      duration: chat.duration || null,
+      status: chat.status || "sent",
+      createdAt: chat.createdAt?.toISOString() || null,
+      pinned: chat.pinned || false,
+    };
+  } catch (err) {
+    console.error(`❌ [formatChat] Error: ${err.message} at ${timestamp}`);
+    return null;
+  }
 };
 
 // Create or update user profile

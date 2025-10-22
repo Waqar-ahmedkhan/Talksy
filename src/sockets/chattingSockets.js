@@ -752,6 +752,271 @@ export const initChatSocket = (server) => {
       }
     );
     /** Send media (images, videos, documents) */
+    // socket.on(
+    //   "send_media",
+    //   async ({ senderId, receiverId, groupId, channelId, files }, callback) => {
+    //     const timestamp = moment()
+    //       .tz("Asia/Karachi")
+    //       .format("DD/MM/YYYY, hh:mm:ss a");
+    //     try {
+    //       if (
+    //         !senderId ||
+    //         (!receiverId && !groupId && !channelId) ||
+    //         !files ||
+    //         !Array.isArray(files) ||
+    //         files.length === 0 ||
+    //         files.length > 10 ||
+    //         senderId !== socket.userId
+    //       ) {
+    //         socket.emit("media_error", {
+    //           error: "Invalid media data (1-10 files required)",
+    //         });
+    //         if (callback) callback({ error: "Invalid media data" });
+    //         return;
+    //       }
+
+    //       const senderProfile = await Profile.findById(senderId);
+    //       if (!senderProfile) {
+    //         socket.emit("media_error", { error: "Sender profile not found" });
+    //         if (callback) callback({ error: "Sender profile not found" });
+    //         return;
+    //       }
+
+    //       // Validate files
+    //       for (const file of files) {
+    //         const { type, url, fileType, duration, fileName } = file;
+    //         if (
+    //           !["image", "video", "file"].includes(type) ||
+    //           !url ||
+    //           typeof url !== "string" ||
+    //           url.trim() === "" ||
+    //           !fileType ||
+    //           typeof fileType !== "string"
+    //         ) {
+    //           socket.emit("media_error", {
+    //             error: `Invalid file data: ${type}`,
+    //           });
+    //           if (callback) callback({ error: `Invalid file data: ${type}` });
+    //           return;
+    //         }
+    //         if (type === "image" && !fileType.startsWith("image/")) {
+    //           socket.emit("media_error", {
+    //             error: `Invalid MIME type for image: ${fileType}`,
+    //           });
+    //           if (callback)
+    //             callback({ error: `Invalid MIME type for image: ${fileType}` });
+    //           return;
+    //         }
+    //         if (
+    //           type === "video" &&
+    //           !fileType.startsWith("video/") &&
+    //           fileType !== "application/octet-stream"
+    //         ) {
+    //           socket.emit("media_error", {
+    //             error: `Invalid MIME type for video: ${fileType}`,
+    //           });
+    //           if (callback) callback({ error: `Invalid video MIME type` });
+    //           return;
+    //         }
+    //         if (
+    //           type === "file" &&
+    //           (!fileName || typeof fileName !== "string")
+    //         ) {
+    //           socket.emit("media_error", {
+    //             error: "Documents must have a file name",
+    //           });
+    //           if (callback)
+    //             callback({ error: "Documents must have a file name" });
+    //           return;
+    //         }
+    //         if (
+    //           type === "video" &&
+    //           duration != null &&
+    //           (typeof duration !== "number" || duration <= 0 || duration > 300)
+    //         ) {
+    //           console.warn(
+    //             `Invalid video duration for ${fileName}: ${duration}, proceeding without duration`
+    //           );
+    //         }
+    //       }
+
+    //       if (receiverId) {
+    //         let receiverProfile = await Profile.findById(receiverId);
+    //         if (!receiverProfile) {
+    //           const user = await User.findById(receiverId);
+    //           if (user) {
+    //             receiverProfile = await Profile.findOne({ phone: user.phone });
+    //             if (!receiverProfile) {
+    //               receiverProfile = await Profile.create({
+    //                 phone: user.phone,
+    //                 displayName: user.displayName,
+    //                 randomNumber: Math.random().toString(36).substring(2, 10),
+    //                 isVisible: false,
+    //                 isNumberVisible: false,
+    //                 avatarUrl: "",
+    //               });
+    //             }
+    //             receiverId = receiverProfile._id.toString();
+    //           } else {
+    //             socket.emit("media_error", {
+    //               error: "Receiver profile not found",
+    //             });
+    //             if (callback) callback({ error: "Receiver profile not found" });
+    //             return;
+    //           }
+    //         }
+
+    //         const blocked = await Block.findOne({
+    //           $or: [
+    //             { blockerId: receiverId, blockedId: senderId },
+    //             { blockerId: senderId, blockedId: receiverId },
+    //           ],
+    //         });
+    //         if (blocked) {
+    //           socket.emit("media_error", { error: "User is blocked" });
+    //           if (callback) callback({ error: "User is blocked" });
+    //           return;
+    //         }
+    //       } else if (groupId) {
+    //         const group = await Group.findById(groupId);
+    //         if (!group || !group.members.includes(senderId)) {
+    //           socket.emit("media_error", {
+    //             error: group ? "Sender not in group" : "Group not found",
+    //           });
+    //           if (callback)
+    //             callback({
+    //               error: group ? "Sender not in group" : "Group not found",
+    //             });
+    //           return;
+    //         }
+    //       } else if (channelId) {
+    //         const channel = await Channel.findById(channelId);
+    //         if (!channel || !channel.members.includes(senderId)) {
+    //           socket.emit("media_error", {
+    //             error: channel ? "Sender not in channel" : "Channel not found",
+    //           });
+    //           if (callback)
+    //             callback({
+    //               error: channel
+    //                 ? "Sender not in channel"
+    //                 : "Channel not found",
+    //             });
+    //           return;
+    //         }
+    //       }
+
+    //       const chats = await Promise.all(
+    //         files.map((file) =>
+    //           Chat.create({
+    //             senderId,
+    //             receiverId: receiverId || undefined,
+    //             groupId: groupId || undefined,
+    //             channelId: channelId || undefined,
+    //             type: file.type,
+    //             content: file.url,
+    //             fileType: file.fileType,
+    //             fileName: file.type === "file" ? file.fileName : undefined,
+    //             duration: file.type === "video" ? file.duration || 0 : 0,
+    //             status: "sent",
+    //             deletedFor: [],
+    //           })
+    //         )
+    //       );
+
+    //       const payload = chats.map((chat) => ({
+    //         id: chat._id.toString(),
+    //         senderId: chat.senderId.toString(),
+    //         receiverId: chat.receiverId?.toString(),
+    //         groupId: chat.groupId?.toString(),
+    //         channelId: chat.channelId?.toString(),
+    //         content: chat.content,
+    //         type: chat.type,
+    //         fileType: chat.fileType,
+    //         fileName: chat.fileName,
+    //         duration: chat.duration || 0,
+    //         timestamp: chat.createdAt.toISOString(),
+    //         status: chat.status,
+    //       }));
+
+    //       if (receiverId) {
+    //         const receiverSocket = onlineUsers.get(receiverId);
+    //         if (receiverSocket) {
+    //           payload.forEach((item) =>
+    //             io.to(receiverSocket).emit("receive_media", item)
+    //           );
+    //           await Promise.all(
+    //             chats.map(async (chat) => {
+    //               chat.status = "delivered";
+    //               await chat.save();
+    //             })
+    //           );
+    //           payload.forEach((item) => (item.status = "delivered"));
+    //         }
+    //       } else if (groupId) {
+    //         const group = await Group.findById(groupId);
+    //         if (group) {
+    //           group.members
+    //             .map((id) => id.toString())
+    //             .filter((id) => id !== senderId)
+    //             .forEach((memberId) => {
+    //               const memberSocket = onlineUsers.get(memberId);
+    //               if (memberSocket) {
+    //                 payload.forEach((item) =>
+    //                   io.to(memberSocket).emit("receive_media", item)
+    //                 );
+    //               }
+    //             });
+    //           await Promise.all(
+    //             chats.map(async (chat) => {
+    //               chat.status = "delivered";
+    //               await chat.save();
+    //             })
+    //           );
+    //           payload.forEach((item) => (item.status = "delivered"));
+    //         }
+    //       } else if (channelId) {
+    //         const channel = await Channel.findById(channelId);
+    //         if (channel) {
+    //           channel.members
+    //             .map((id) => id.toString())
+    //             .filter((id) => id !== senderId)
+    //             .forEach((memberId) => {
+    //               const memberSocket = onlineUsers.get(memberId);
+    //               if (memberSocket) {
+    //                 payload.forEach((item) =>
+    //                   io.to(memberSocket).emit("receive_media", item)
+    //                 );
+    //               }
+    //             });
+    //           await Promise.all(
+    //             chats.map(async (chat) => {
+    //               chat.status = "delivered";
+    //               await chat.save();
+    //             })
+    //           );
+    //           payload.forEach((item) => (item.status = "delivered"));
+    //         }
+    //       }
+
+    //       payload.forEach((item) => socket.emit("media_sent", item));
+    //       if (callback)
+    //         callback({
+    //           status: "success",
+    //           ids: chats.map((c) => c._id.toString()),
+    //         });
+    //     } catch (err) {
+    //       console.error(`❌ Send media error: ${err.message} at ${timestamp}`, {
+    //         senderId,
+    //         receiverId,
+    //         groupId,
+    //         channelId,
+    //       });
+    //       socket.emit("media_error", { error: "Failed to send media" });
+    //       if (callback) callback({ error: "Failed to send media" });
+    //     }
+    //   }
+    // );
+    /** Send media (images, videos, documents, voice) */
     socket.on(
       "send_media",
       async ({ senderId, receiverId, groupId, channelId, files }, callback) => {
@@ -768,6 +1033,9 @@ export const initChatSocket = (server) => {
             files.length > 10 ||
             senderId !== socket.userId
           ) {
+            console.error(
+              `❌ [send_media] Invalid data: senderId=${senderId}, files=${files?.length} at ${timestamp}`
+            );
             socket.emit("media_error", {
               error: "Invalid media data (1-10 files required)",
             });
@@ -777,6 +1045,9 @@ export const initChatSocket = (server) => {
 
           const senderProfile = await Profile.findById(senderId);
           if (!senderProfile) {
+            console.error(
+              `❌ [send_media] Sender profile not found: senderId=${senderId} at ${timestamp}`
+            );
             socket.emit("media_error", { error: "Sender profile not found" });
             if (callback) callback({ error: "Sender profile not found" });
             return;
@@ -786,13 +1057,16 @@ export const initChatSocket = (server) => {
           for (const file of files) {
             const { type, url, fileType, duration, fileName } = file;
             if (
-              !["image", "video", "file"].includes(type) ||
+              !["image", "video", "file", "voice"].includes(type) ||
               !url ||
               typeof url !== "string" ||
               url.trim() === "" ||
               !fileType ||
               typeof fileType !== "string"
             ) {
+              console.error(
+                `❌ [send_media] Invalid file data: type=${type}, url=${url}, fileType=${fileType} at ${timestamp}`
+              );
               socket.emit("media_error", {
                 error: `Invalid file data: ${type}`,
               });
@@ -800,6 +1074,9 @@ export const initChatSocket = (server) => {
               return;
             }
             if (type === "image" && !fileType.startsWith("image/")) {
+              console.error(
+                `❌ [send_media] Invalid MIME type for image: fileType=${fileType} at ${timestamp}`
+              );
               socket.emit("media_error", {
                 error: `Invalid MIME type for image: ${fileType}`,
               });
@@ -812,16 +1089,32 @@ export const initChatSocket = (server) => {
               !fileType.startsWith("video/") &&
               fileType !== "application/octet-stream"
             ) {
+              console.error(
+                `❌ [send_media] Invalid MIME type for video: fileType=${fileType} at ${timestamp}`
+              );
               socket.emit("media_error", {
                 error: `Invalid MIME type for video: ${fileType}`,
               });
               if (callback) callback({ error: `Invalid video MIME type` });
               return;
             }
+            if (type === "voice" && !fileType.startsWith("audio/")) {
+              console.error(
+                `❌ [send_media] Invalid MIME type for voice: fileType=${fileType} at ${timestamp}`
+              );
+              socket.emit("media_error", {
+                error: `Invalid MIME type for voice: ${fileType}`,
+              });
+              if (callback) callback({ error: `Invalid voice MIME type` });
+              return;
+            }
             if (
               type === "file" &&
               (!fileName || typeof fileName !== "string")
             ) {
+              console.error(
+                `❌ [send_media] Documents must have a file name: fileName=${fileName} at ${timestamp}`
+              );
               socket.emit("media_error", {
                 error: "Documents must have a file name",
               });
@@ -830,40 +1123,28 @@ export const initChatSocket = (server) => {
               return;
             }
             if (
-              type === "video" &&
+              (type === "video" || type === "voice") &&
               duration != null &&
               (typeof duration !== "number" || duration <= 0 || duration > 300)
             ) {
               console.warn(
-                `Invalid video duration for ${fileName}: ${duration}, proceeding without duration`
+                `[send_media] Invalid duration for ${fileName}: ${duration}, proceeding without duration at ${timestamp}`
               );
+              file.duration = 0;
             }
           }
 
           if (receiverId) {
             let receiverProfile = await Profile.findById(receiverId);
             if (!receiverProfile) {
-              const user = await User.findById(receiverId);
-              if (user) {
-                receiverProfile = await Profile.findOne({ phone: user.phone });
-                if (!receiverProfile) {
-                  receiverProfile = await Profile.create({
-                    phone: user.phone,
-                    displayName: user.displayName,
-                    randomNumber: Math.random().toString(36).substring(2, 10),
-                    isVisible: false,
-                    isNumberVisible: false,
-                    avatarUrl: "",
-                  });
-                }
-                receiverId = receiverProfile._id.toString();
-              } else {
-                socket.emit("media_error", {
-                  error: "Receiver profile not found",
-                });
-                if (callback) callback({ error: "Receiver profile not found" });
-                return;
-              }
+              console.error(
+                `❌ [send_media] Receiver profile not found: receiverId=${receiverId} at ${timestamp}`
+              );
+              socket.emit("media_error", {
+                error: "Receiver profile not found",
+              });
+              if (callback) callback({ error: "Receiver profile not found" });
+              return;
             }
 
             const blocked = await Block.findOne({
@@ -873,6 +1154,9 @@ export const initChatSocket = (server) => {
               ],
             });
             if (blocked) {
+              console.error(
+                `❌ [send_media] User is blocked: senderId=${senderId}, receiverId=${receiverId} at ${timestamp}`
+              );
               socket.emit("media_error", { error: "User is blocked" });
               if (callback) callback({ error: "User is blocked" });
               return;
@@ -880,6 +1164,9 @@ export const initChatSocket = (server) => {
           } else if (groupId) {
             const group = await Group.findById(groupId);
             if (!group || !group.members.includes(senderId)) {
+              console.error(
+                `❌ [send_media] Invalid group: groupId=${groupId}, senderId=${senderId} at ${timestamp}`
+              );
               socket.emit("media_error", {
                 error: group ? "Sender not in group" : "Group not found",
               });
@@ -892,6 +1179,9 @@ export const initChatSocket = (server) => {
           } else if (channelId) {
             const channel = await Channel.findById(channelId);
             if (!channel || !channel.members.includes(senderId)) {
+              console.error(
+                `❌ [send_media] Invalid channel: channelId=${channelId}, senderId=${senderId} at ${timestamp}`
+              );
               socket.emit("media_error", {
                 error: channel ? "Sender not in channel" : "Channel not found",
               });
@@ -906,21 +1196,29 @@ export const initChatSocket = (server) => {
           }
 
           const chats = await Promise.all(
-            files.map((file) =>
-              Chat.create({
+            files.map((file) => {
+              const chatType = file.fileType.startsWith("audio/")
+                ? "voice"
+                : file.type;
+              return Chat.create({
                 senderId,
                 receiverId: receiverId || undefined,
                 groupId: groupId || undefined,
                 channelId: channelId || undefined,
-                type: file.type,
+                type: chatType,
                 content: file.url,
                 fileType: file.fileType,
                 fileName: file.type === "file" ? file.fileName : undefined,
-                duration: file.type === "video" ? file.duration || 0 : 0,
+                duration:
+                  file.type === "video" ||
+                  file.type === "voice" ||
+                  chatType === "voice"
+                    ? file.duration || 0
+                    : 0,
                 status: "sent",
                 deletedFor: [],
-              })
-            )
+              });
+            })
           );
 
           const payload = chats.map((chat) => ({
@@ -941,9 +1239,11 @@ export const initChatSocket = (server) => {
           if (receiverId) {
             const receiverSocket = onlineUsers.get(receiverId);
             if (receiverSocket) {
-              payload.forEach((item) =>
-                io.to(receiverSocket).emit("receive_media", item)
-              );
+              payload.forEach((item) => {
+                const event =
+                  item.type === "voice" ? "receive_voice" : "receive_media";
+                io.to(receiverSocket).emit(event, item);
+              });
               await Promise.all(
                 chats.map(async (chat) => {
                   chat.status = "delivered";
@@ -961,9 +1261,13 @@ export const initChatSocket = (server) => {
                 .forEach((memberId) => {
                   const memberSocket = onlineUsers.get(memberId);
                   if (memberSocket) {
-                    payload.forEach((item) =>
-                      io.to(memberSocket).emit("receive_media", item)
-                    );
+                    payload.forEach((item) => {
+                      const event =
+                        item.type === "voice"
+                          ? "receive_voice"
+                          : "receive_media";
+                      io.to(memberSocket).emit(event, item);
+                    });
                   }
                 });
               await Promise.all(
@@ -983,9 +1287,13 @@ export const initChatSocket = (server) => {
                 .forEach((memberId) => {
                   const memberSocket = onlineUsers.get(memberId);
                   if (memberSocket) {
-                    payload.forEach((item) =>
-                      io.to(memberSocket).emit("receive_media", item)
-                    );
+                    payload.forEach((item) => {
+                      const event =
+                        item.type === "voice"
+                          ? "receive_voice"
+                          : "receive_media";
+                      io.to(memberSocket).emit(event, item);
+                    });
                   }
                 });
               await Promise.all(
@@ -998,19 +1306,28 @@ export const initChatSocket = (server) => {
             }
           }
 
-          payload.forEach((item) => socket.emit("media_sent", item));
+          payload.forEach((item) => {
+            const event = item.type === "voice" ? "voice_sent" : "media_sent";
+            socket.emit(event, item);
+          });
+          console.log(
+            `[send_media] Media messages saved: count=${chats.length} at ${timestamp}`
+          );
           if (callback)
             callback({
               status: "success",
               ids: chats.map((c) => c._id.toString()),
             });
         } catch (err) {
-          console.error(`❌ Send media error: ${err.message} at ${timestamp}`, {
-            senderId,
-            receiverId,
-            groupId,
-            channelId,
-          });
+          console.error(
+            `❌ [send_media] Error: ${err.message} at ${timestamp}`,
+            {
+              senderId,
+              receiverId,
+              groupId,
+              channelId,
+            }
+          );
           socket.emit("media_error", { error: "Failed to send media" });
           if (callback) callback({ error: "Failed to send media" });
         }
