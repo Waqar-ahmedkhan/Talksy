@@ -3,6 +3,7 @@ import Channel from "../models/Channel.js";
 import Group from "../models/Group.js";
 import Chat from "../models/Chat.js";
 import User from "../models/User.js";
+import moment from "moment-timezone";
 import Profile from "../models/Profile.js";
 import { isValidObjectId } from "mongoose";
 import mongoose from "mongoose";
@@ -30,40 +31,6 @@ export const normalizePhoneNumber = (phone) => {
 };
 
 // Format profile for response
-// export const formatProfile = (
-//   profile,
-//   user,
-//   customName = null,
-//   isBlocked = false
-// ) => {
-//   const timestamp = logTimestamp();
-//   const phone = profile?.phone || "";
-//   const name = customName || profile?.displayName || "Unknown";
-//   const displayName = name && phone ? name : name || phone || "Unknown";
-
-//   const formatted = {
-//     id: profile?._id?.toString() || null,
-//     userId: user?._id?.toString() || null,
-//     phone,
-//     displayName,
-//     randomNumber: profile?.randomNumber || "",
-//     isVisible: profile?.isVisible ?? false,
-//     isNumberVisible: profile?.isNumberVisible ?? false,
-//     avatarUrl: profile?.avatarUrl || "",
-//     fcmToken: profile?.fcmToken || user?.fcmToken || "",
-//     createdAt: profile?.createdAt?.toISOString() || null,
-//     online: user?.online ?? false,
-//     lastSeen: user?.lastSeen?.toISOString() || null,
-//     customName: customName || null,
-//     isBlocked,
-//   };
-
-//   console.log(
-//     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
-//   );
-//   return formatted;
-// };
-
 export const formatProfile = (
   profile,
   user,
@@ -73,13 +40,13 @@ export const formatProfile = (
   const timestamp = logTimestamp();
   const phone = profile?.phone || "";
   const name = customName || profile?.displayName || "Unknown";
-  const displayName = profile?.isNumberVisible ? phone : name;
+  const displayName = name && phone ? name : name || phone || "Unknown";
+
   const formatted = {
     id: profile?._id?.toString() || null,
     userId: user?._id?.toString() || null,
     phone,
     displayName,
-    customName: customName || null,
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -88,13 +55,47 @@ export const formatProfile = (
     createdAt: profile?.createdAt?.toISOString() || null,
     online: user?.online ?? false,
     lastSeen: user?.lastSeen?.toISOString() || null,
+    customName: customName || null,
     isBlocked,
   };
+
   console.log(
     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
   );
   return formatted;
 };
+
+// export const formatProfile = (
+//   profile,
+//   user,
+//   customName = null,
+//   isBlocked = false
+// ) => {
+//   const timestamp = logTimestamp();
+//   const phone = profile?.phone || "";
+//   const name = customName || profile?.displayName || "Unknown";
+//   const displayName = profile?.isNumberVisible ? phone : name;
+//   const formatted = {
+//     id: profile?._id?.toString() || null,
+//     userId: user?._id?.toString() || null,
+//     phone,
+//     displayName,
+//     customName: customName || null,
+//     randomNumber: profile?.randomNumber || "",
+//     isVisible: profile?.isVisible ?? false,
+//     isNumberVisible: profile?.isNumberVisible ?? false,
+//     avatarUrl: profile?.avatarUrl || "",
+//     fcmToken: profile?.fcmToken || user?.fcmToken || "",
+//     createdAt: profile?.createdAt?.toISOString() || null,
+//     online: user?.online ?? false,
+//     lastSeen: user?.lastSeen?.toISOString() || null,
+//     isBlocked,
+//   };
+//   console.log(
+//     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
+//   );
+//   return formatted;
+// };
 
 export const initGroupSocket = (server) => {
   const io = new Server(server, {
