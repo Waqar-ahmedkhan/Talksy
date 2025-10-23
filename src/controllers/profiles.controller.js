@@ -212,16 +212,14 @@ export const formatProfile = (
 ) => {
   const timestamp = logTimestamp();
   const phone = profile?.phone || "";
-  const displayName = profile?.isNumberVisible
-    ? phone
-    : profile?.displayName || "Unknown"; // Only profile data
-
+  const name = customName || profile?.displayName || "Unknown";
+  const displayName = profile?.isNumberVisible ? phone : name;
   const formatted = {
     id: profile?._id?.toString() || null,
     userId: user?._id?.toString() || null,
     phone,
     displayName,
-    customName: customName || null, // Exact customName from contacts
+    customName: customName || null,
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -232,7 +230,6 @@ export const formatProfile = (
     lastSeen: user?.lastSeen?.toISOString() || null,
     isBlocked,
   };
-
   console.log(
     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
   );
