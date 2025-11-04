@@ -1133,9 +1133,9 @@ export const getChatList = async (req, res) => {
   const timestamp = logTimestamp();
   try {
     console.log(
-      `[getChatList] Processing request: query=${JSON.stringify(
-        req.query
-      )}, userId=${req.user?._id}, phone=${req.user?.phone} at ${timestamp}`
+      `[getChatList] Request: query=${JSON.stringify(req.query)}, userId=${
+        req.user?._id
+      }, phone=${req.user?.phone} at ${timestamp}`
     );
 
     const myPhone = normalizePhoneNumber(req.user.phone);
@@ -1143,48 +1143,44 @@ export const getChatList = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
+    // ---- Validation -------------------------------------------------
     if (!userId || !myPhone) {
-      console.error(`[getChatList] Missing userId or phone at ${timestamp}`);
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized: Missing user ID or phone",
-      });
+      console.error(`[getChatList] Missing userId/phone at ${timestamp}`);
+      return res
+        .status(401)
+        .json({ success: false, error: "Unauthorized: missing user data" });
     }
-
     if (page < 1 || limit < 1 || limit > 100) {
       console.error(
-        `[getChatList] Invalid pagination: page=${page}, limit=${limit} at ${timestamp}`
+        `[getChatList] Invalid pagination page=${page} limit=${limit} at ${timestamp}`
       );
-      return res.status(400).json({
-        success: false,
-        error:
-          "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
-      });
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid pagination params" });
     }
-
     const skip = (page - 1) * limit;
 
-    // Find my profile
+    // ---- My profile -------------------------------------------------
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
       console.error(
-        `[getChatList] Profile not found: phone=${myPhone} at ${timestamp}`
+        `[getChatList] Profile not found phone=${myPhone} at ${timestamp}`
       );
       return res
         .status(404)
         .json({ success: false, error: "Your profile not found" });
     }
 
-    // Get blocked users
+    // ---- Blocked users ---------------------------------------------
     const blocked = await Block.find({ blockerId: myProfile._id }).select(
       "blockedId"
     );
     const blockedSet = new Set(blocked.map((b) => b.blockedId.toString()));
     console.log(
-      `[getChatList] Found ${blocked.length} blocked users at ${timestamp}`
+      `[getChatList] ${blocked.length} blocked users at ${timestamp}`
     );
 
-    // Fetch all relevant chats
+    // ---- All chats --------------------------------------------------
     const chats = await Chat.find({
       $and: [
         { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
@@ -1200,48 +1196,57 @@ export const getChatList = async (req, res) => {
 
     console.log(`[getChatList] Found ${chats.length} chats at ${timestamp}`);
 
-    if (!chats || chats.length === 0) {
-      console.log(`[getChatList] No chats found at ${timestamp}`);
+    if (!chats.length) {
       return res.json({ success: true, page, limit, total: 0, chats: [] });
     }
 
-    // Extract unique phone numbers
+    // ---- Phones that appear in chats (for online status) ----------
     const phoneNumbers = [
       ...new Set([
         ...chats
-          .map((chat) => normalizePhoneNumber(chat.senderId?.phone))
+          .map((c) => normalizePhoneNumber(c.senderId?.phone))
           .filter(Boolean),
         ...chats
-          .map((chat) => normalizePhoneNumber(chat.receiverId?.phone))
+          .map((c) => normalizePhoneNumber(c.receiverId?.phone))
           .filter(Boolean),
       ]),
     ];
+    console.log(
+      `[getChatList] ${phoneNumbers.length} unique phones from chats at ${timestamp}`
+    );
+
+    // ==============================================================
+    // 1. Load **ALL** contacts of the current user
+    // 2. Load **only** users that are in chats (for online/lastSeen)
+    // ==============================================================
+    console.log(
+      `[getChatList] Loading ALL contacts for userId=${userId} at ${timestamp}`
+    );
+    const allContacts = await Contact.find({ userId }).select(
+      "phone customName"
+    );
 
     console.log(
-      `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
+      `[getChatList] Loading online users for ${phoneNumbers.length} chat participants at ${timestamp}`
+    );
+    const chatUsers = await User.find({ phone: { $in: phoneNumbers } }).select(
+      "phone online lastSeen fcmToken"
     );
 
-    // Fetch users and contacts in parallel
-    const [users, contacts] = await Promise.all([
-      User.find({ phone: { $in: phoneNumbers } }).select(
-        "phone online lastSeen fcmToken"
-      ),
-      Contact.find({ userId, phone: { $in: phoneNumbers } }).select(
-        "phone customName"
-      ),
-    ]);
-
-    console.log(
-      `[getChatList] Found ${users.length} users, ${contacts.length} contacts at ${timestamp}`
-    );
-
-    const userMap = new Map(
-      users.map((u) => [normalizePhoneNumber(u.phone), u])
-    );
+    // ---- contactMap (ALL contacts) ---------------------------------
     const contactMap = new Map(
-      contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
+      allContacts.map((c) => [
+        normalizePhoneNumber(c.phone),
+        c.customName || null,
+      ])
     );
 
+    // ---- userMap (online status) -----------------------------------
+    const userMap = new Map(
+      chatUsers.map((u) => [normalizePhoneNumber(u.phone), u])
+    );
+
+    // ---- Build chat map --------------------------------------------
     const chatMap = new Map();
 
     for (const chat of chats) {
@@ -1268,7 +1273,6 @@ export const getChatList = async (req, res) => {
         const otherUser = userMap.get(otherPhone);
         const isBlocked = blockedSet.has(otherProfile._id.toString());
 
-        // Use formatProfile to ensure consistent name priority
         const formattedProfile = formatProfile(
           otherProfile,
           otherUser,
@@ -1277,7 +1281,7 @@ export const getChatList = async (req, res) => {
         );
 
         console.log(
-          `[getChatList] Added profile: phone=${otherPhone}, displayName=${formattedProfile.displayName}, customName=${customName} at ${timestamp}`
+          `[getChatList] Added profile phone=${otherPhone} displayName="${formattedProfile.displayName}" at ${timestamp}`
         );
 
         chatMap.set(otherProfileId, {
@@ -1293,7 +1297,7 @@ export const getChatList = async (req, res) => {
       } else {
         const existing = chatMap.get(otherProfileId);
 
-        // Update latest message if newer
+        // update latest message if newer
         if (
           new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
         ) {
@@ -1301,7 +1305,7 @@ export const getChatList = async (req, res) => {
           existing.pinned = chat.pinned;
         }
 
-        // Increment unread count
+        // increment unread
         if (
           chat.receiverId._id.toString() === myProfile._id.toString() &&
           ["sent", "delivered"].includes(chat.status)
@@ -1311,8 +1315,8 @@ export const getChatList = async (req, res) => {
       }
     }
 
-    // Sort: pinned first, then by latest message
-    const chatList = Array.from(chatMap.values())
+    // ---- Sort & paginate --------------------------------------------
+    const sorted = Array.from(chatMap.values())
       .sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
@@ -1323,8 +1327,7 @@ export const getChatList = async (req, res) => {
       })
       .slice(skip, skip + limit);
 
-    // Format final response
-    const formattedChatList = chatList.map((item) => ({
+    const formattedChatList = sorted.map((item) => ({
       profile: item.profile,
       latestMessage: formatChat(item.latestMessage),
       unreadCount: item.unreadCount,
@@ -1332,7 +1335,7 @@ export const getChatList = async (req, res) => {
     }));
 
     console.log(
-      `[getChatList] Response ready: total=${chatMap.size}, returned=${formattedChatList.length} at ${timestamp}`
+      `[getChatList] Response total=${chatMap.size} returned=${formattedChatList.length} at ${timestamp}`
     );
 
     return res.json({
@@ -1343,12 +1346,10 @@ export const getChatList = async (req, res) => {
       chats: formattedChatList,
     });
   } catch (err) {
-    console.error(`[getChatList] Error: ${err.message} at ${timestamp}`);
-    return res.status(500).json({
-      success: false,
-      error: "Server error",
-      details: err.message,
-    });
+    console.error(`[getChatList] ERROR: ${err.message} at ${timestamp}`);
+    return res
+      .status(500)
+      .json({ success: false, error: "Server error", details: err.message });
   }
 };
 
