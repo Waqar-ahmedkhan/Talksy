@@ -7,12 +7,9 @@ import Profile from "../models/Profile.js";
 import Contact from "../models/Contact.js";
 import moment from "moment-timezone";
 import Block from "../models/Block.js";
-
-// Utility for consistent timestamp logging
 const logTimestamp = () =>
   moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
 
-// Format profile for response
 const formatProfile = (profile, user, customName = null, isBlocked = false) => {
   const timestamp = logTimestamp();
   const phone = profile?.phone || "";
