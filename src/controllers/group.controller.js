@@ -5,7 +5,7 @@ import Chat from "../models/Chat.js";
 import User from "../models/User.js";
 import Profile from "../models/Profile.js";
 import Contact from "../models/Contact.js";
-import moment from "moment";
+import moment from "moment-timezone";
 import Block from "../models/Block.js";
 
 // Utility for consistent timestamp logging
