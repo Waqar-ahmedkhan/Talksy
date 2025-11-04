@@ -248,15 +248,15 @@ export const formatProfile = (
   const timestamp = logTimestamp();
   const phone = profile?.phone || "";
 
-  // ONLY show customName. No fallback to profile.displayName or phone
+  // ONLY custom name → empty if none
   const displayName = customName ? customName.trim() : "";
 
   const formatted = {
     id: profile?._id?.toString() || null,
     userId: user?._id?.toString() || null,
     phone,
-    displayName, // Only customName or empty
-    customName: customName || null, // Keep for editing
+    displayName,
+    ...(customName && { customName }), // omit if null
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -269,11 +269,10 @@ export const formatProfile = (
   };
 
   console.log(
-    `[formatProfile] Formatted: phone=${phone}, displayName="${displayName}", customName=${customName} at ${timestamp}`
+    `[formatProfile] phone=${phone}, displayName="${displayName}", customName=${customName} at ${timestamp}`
   );
   return formatted;
 };
-
 // Format chat for response
 // const formatChat = (chat) => {
 //   const timestamp = logTimestamp();
@@ -1145,27 +1144,18 @@ export const getChatList = async (req, res) => {
 
     // ---- Validation -------------------------------------------------
     if (!userId || !myPhone) {
-      console.error(`[getChatList] Missing userId/phone at ${timestamp}`);
-      return res
-        .status(401)
-        .json({ success: false, error: "Unauthorized: missing user data" });
+      return res.status(401).json({ success: false, error: "Unauthorized" });
     }
     if (page < 1 || limit < 1 || limit > 100) {
-      console.error(
-        `[getChatList] Invalid pagination page=${page} limit=${limit} at ${timestamp}`
-      );
       return res
         .status(400)
-        .json({ success: false, error: "Invalid pagination params" });
+        .json({ success: false, error: "Invalid pagination" });
     }
     const skip = (page - 1) * limit;
 
     // ---- My profile -------------------------------------------------
     const myProfile = await Profile.findOne({ phone: myPhone });
     if (!myProfile) {
-      console.error(
-        `[getChatList] Profile not found phone=${myPhone} at ${timestamp}`
-      );
       return res
         .status(404)
         .json({ success: false, error: "Your profile not found" });
@@ -1200,7 +1190,7 @@ export const getChatList = async (req, res) => {
       return res.json({ success: true, page, limit, total: 0, chats: [] });
     }
 
-    // ---- Phones that appear in chats (for online status) ----------
+    // ---- Phones in chats (for online status) -----------------------
     const phoneNumbers = [
       ...new Set([
         ...chats
@@ -1216,8 +1206,8 @@ export const getChatList = async (req, res) => {
     );
 
     // ==============================================================
-    // 1. Load **ALL** contacts of the current user
-    // 2. Load **only** users that are in chats (for online/lastSeen)
+    // 1. LOAD **ALL** YOUR CONTACTS (not just chat participants)
+    // 2. LOAD **ONLY** USERS FROM CHATS (for online status)
     // ==============================================================
     console.log(
       `[getChatList] Loading ALL contacts for userId=${userId} at ${timestamp}`
@@ -1233,7 +1223,7 @@ export const getChatList = async (req, res) => {
       "phone online lastSeen fcmToken"
     );
 
-    // ---- contactMap (ALL contacts) ---------------------------------
+    // ---- contactMap: ALL your saved contacts -----------------------
     const contactMap = new Map(
       allContacts.map((c) => [
         normalizePhoneNumber(c.phone),
@@ -1241,7 +1231,7 @@ export const getChatList = async (req, res) => {
       ])
     );
 
-    // ---- userMap (online status) -----------------------------------
+    // ---- userMap: online status only for chat participants ---------
     const userMap = new Map(
       chatUsers.map((u) => [normalizePhoneNumber(u.phone), u])
     );
@@ -1250,12 +1240,7 @@ export const getChatList = async (req, res) => {
     const chatMap = new Map();
 
     for (const chat of chats) {
-      if (!chat.senderId || !chat.receiverId) {
-        console.warn(
-          `[getChatList] Skipping chat ${chat._id}: missing sender/receiver at ${timestamp}`
-        );
-        continue;
-      }
+      if (!chat.senderId || !chat.receiverId) continue;
 
       const otherProfileId =
         chat.senderId._id.toString() === myProfile._id.toString()
@@ -1269,7 +1254,7 @@ export const getChatList = async (req, res) => {
             : chat.senderId;
 
         const otherPhone = normalizePhoneNumber(otherProfile.phone);
-        const customName = contactMap.get(otherPhone) || null;
+        const customName = contactMap.get(otherPhone) || null; // FROM ALL CONTACTS
         const otherUser = userMap.get(otherPhone);
         const isBlocked = blockedSet.has(otherProfile._id.toString());
 
@@ -1281,7 +1266,7 @@ export const getChatList = async (req, res) => {
         );
 
         console.log(
-          `[getChatList] Added profile phone=${otherPhone} displayName="${formattedProfile.displayName}" at ${timestamp}`
+          `[getChatList] Added: phone=${otherPhone}, displayName="${formattedProfile.displayName}", customName=${customName} at ${timestamp}`
         );
 
         chatMap.set(otherProfileId, {
@@ -1296,16 +1281,12 @@ export const getChatList = async (req, res) => {
         });
       } else {
         const existing = chatMap.get(otherProfileId);
-
-        // update latest message if newer
         if (
           new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
         ) {
           existing.latestMessage = chat;
           existing.pinned = chat.pinned;
         }
-
-        // increment unread
         if (
           chat.receiverId._id.toString() === myProfile._id.toString() &&
           ["sent", "delivered"].includes(chat.status)
@@ -1335,9 +1316,8 @@ export const getChatList = async (req, res) => {
     }));
 
     console.log(
-      `[getChatList] Response total=${chatMap.size} returned=${formattedChatList.length} at ${timestamp}`
+      `[getChatList] Response: total=${chatMap.size}, returned=${formattedChatList.length} at ${timestamp}`
     );
-
     return res.json({
       success: true,
       page,
