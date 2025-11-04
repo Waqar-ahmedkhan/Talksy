@@ -248,19 +248,15 @@ export const formatProfile = (
   const timestamp = logTimestamp();
   const phone = profile?.phone || "";
 
-  // PRIORITY: customName > (isNumberVisible ? phone : profile.displayName) > "Unknown"
-  const displayName = customName
-    ? customName
-    : profile?.isNumberVisible
-    ? phone
-    : profile?.displayName || "Unknown"; // Fallback if no customName
+  // ONLY show customName. No fallback to profile.displayName or phone
+  const displayName = customName ? customName.trim() : "";
 
   const formatted = {
     id: profile?._id?.toString() || null,
     userId: user?._id?.toString() || null,
     phone,
-    displayName, // Now prioritizes customName!
-    customName: customName || null, // Still send raw customName (optional for client use)
+    displayName, // Only customName or empty
+    customName: customName || null, // Keep for editing
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -271,8 +267,9 @@ export const formatProfile = (
     lastSeen: user?.lastSeen?.toISOString() || null,
     isBlocked,
   };
+
   console.log(
-    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
+    `[formatProfile] Formatted: phone=${phone}, displayName="${displayName}", customName=${customName} at ${timestamp}`
   );
   return formatted;
 };
