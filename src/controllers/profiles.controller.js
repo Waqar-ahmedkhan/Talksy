@@ -193,7 +193,7 @@ export const formatProfile = (
     userId: user?._id?.toString() || null,
     phone,
     displayName,
-    customName: customName || null, // Exact customName from contacts
+    customName: customName || profile?.customName || null, // fallback to profile
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -206,7 +206,7 @@ export const formatProfile = (
   };
 
   console.log(
-    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
+    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${formatted.customName}, isBlocked=${isBlocked} at ${timestamp}`
   );
   return formatted;
 };
