@@ -997,7 +997,6 @@ export const getChatList = async (req, res) => {
         phone: { $in: phoneNumbers },
       }).select("phone customName"),
     ]);
-
     console.log(
       `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
     );
