@@ -7,8 +7,25 @@ import Block from "../models/Block.js";
 import moment from "moment-timezone";
 import validator from "validator";
 
-const logTimestamp = () =>
-  moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
+const TZ = "Asia/Karachi";
+const phoneCache = new Map();
+
+const logTimestamp = () => moment().tz(TZ).format("DD/MM/YYYY, hh:mm:ss a");
+
+// Cached phone normalization
+const norm = (phone) => {
+  if (!phone || typeof phone !== "string") return null;
+  if (phoneCache.has(phone)) return phoneCache.get(phone);
+
+  let cleaned = phone.replace(/[^\d+]/g, "");
+  if (/^\d{10}$/.test(cleaned)) cleaned = `+92${cleaned}`;
+  if (/^0\d{9}$/.test(cleaned)) cleaned = `+92${cleaned.slice(1)}`;
+  if (!cleaned.startsWith("+")) cleaned = `+${cleaned}`;
+  cleaned = cleaned.replace(/\+/g, (m, i) => (i === 0 ? m : ""));
+
+  phoneCache.set(phone, cleaned);
+  return cleaned;
+};
 
 export const authenticateToken = async (req, res, next) => {
   const timestamp = logTimestamp();
@@ -176,24 +193,53 @@ const generateRandom11DigitNumber = () => {
   return randomNumber;
 };
 
-export const formatProfile = (
-  profile,
-  user,
-  customName = null,
-  isBlocked = false
-) => {
-  const timestamp = logTimestamp();
+// export const formatProfile = (
+//   profile,
+//   user,
+//   customName = null,
+//   isBlocked = false
+// ) => {
+//   const timestamp = logTimestamp();
+//   const phone = profile?.phone || "";
+//   const displayName = profile?.isNumberVisible
+//     ? phone
+//     : profile?.displayName || "Unknown";
+
+//   const formatted = {
+//     id: profile?._id?.toString() || null,
+//     userId: user?._id?.toString() || null,
+//     phone,
+//     displayName,
+//     customName: customName || null, // Exact customName from contacts
+//     randomNumber: profile?.randomNumber || "",
+//     isVisible: profile?.isVisible ?? false,
+//     isNumberVisible: profile?.isNumberVisible ?? false,
+//     avatarUrl: profile?.avatarUrl || "",
+//     fcmToken: profile?.fcmToken || user?.fcmToken || "",
+//     createdAt: profile?.createdAt?.toISOString() || null,
+//     online: user?.online ?? false,
+//     lastSeen: user?.lastSeen?.toISOString() || null,
+//     isBlocked,
+//   };
+
+//   console.log(
+//     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
+//   );
+//   return formatted;
+// };
+
+const formatProfile = (profile, user, customName = null, isBlocked = false) => {
   const phone = profile?.phone || "";
   const displayName = profile?.isNumberVisible
     ? phone
     : profile?.displayName || "Unknown";
 
-  const formatted = {
+  return {
     id: profile?._id?.toString() || null,
     userId: user?._id?.toString() || null,
     phone,
     displayName,
-    customName: customName || null, // Exact customName from contacts
+    customName: customName || null,
     randomNumber: profile?.randomNumber || "",
     isVisible: profile?.isVisible ?? false,
     isNumberVisible: profile?.isNumberVisible ?? false,
@@ -204,26 +250,53 @@ export const formatProfile = (
     lastSeen: user?.lastSeen?.toISOString() || null,
     isBlocked,
   };
-
-  console.log(
-    `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
-  );
-  return formatted;
 };
+// const formatChat = (chat) => {
+//   const timestamp = moment()
+//     .tz("Asia/Karachi")
+//     .format("DD/MM/YYYY, hh:mm:ss a");
+//   try {
+//     const isAudio =
+//       chat.content.includes(".m4a") ||
+//       (chat.fileType && chat.fileType.startsWith("audio/"));
+//     const chatType = isAudio ? "voice" : chat.type;
+
+//     console.log(
+//       `[formatChat] Formatting chat: id=${chat._id}, originalType=${chat.type}, newType=${chatType}, content=${chat.content} at ${timestamp}`
+//     );
+
+//     return {
+//       id: chat._id.toString(),
+//       senderId: chat.senderId?._id?.toString() || null,
+//       receiverId: chat.receiverId?._id?.toString() || null,
+//       groupId: chat.groupId?.toString() || null,
+//       channelId: chat.channelId?.toString() || null,
+//       type: chatType,
+//       content: chat.content,
+//       displayContent:
+//         chat.type === "text" && chat.content.length > 50
+//           ? `${chat.content.slice(0, 50)}...`
+//           : chat.content,
+//       fileType: chat.fileType || (isAudio ? "audio/mp4" : null),
+//       fileName: chat.fileName || "",
+//       duration: chat.duration || null,
+//       status: chat.status || "sent",
+//       createdAt: chat.createdAt?.toISOString() || null,
+//       pinned: chat.pinned || false,
+//     };
+//   } catch (err) {
+//     console.error(`❌ [formatChat] Error: ${err.message} at ${timestamp}`);
+//     return null;
+//   }
+// };
 
 const formatChat = (chat) => {
-  const timestamp = moment()
-    .tz("Asia/Karachi")
-    .format("DD/MM/YYYY, hh:mm:ss a");
+  const ts = logTimestamp();
   try {
     const isAudio =
       chat.content.includes(".m4a") ||
       (chat.fileType && chat.fileType.startsWith("audio/"));
-    const chatType = isAudio ? "voice" : chat.type;
-
-    console.log(
-      `[formatChat] Formatting chat: id=${chat._id}, originalType=${chat.type}, newType=${chatType}, content=${chat.content} at ${timestamp}`
-    );
+    const type = isAudio ? "voice" : chat.type;
 
     return {
       id: chat._id.toString(),
@@ -231,7 +304,7 @@ const formatChat = (chat) => {
       receiverId: chat.receiverId?._id?.toString() || null,
       groupId: chat.groupId?.toString() || null,
       channelId: chat.channelId?.toString() || null,
-      type: chatType,
+      type,
       content: chat.content,
       displayContent:
         chat.type === "text" && chat.content.length > 50
@@ -245,7 +318,7 @@ const formatChat = (chat) => {
       pinned: chat.pinned || false,
     };
   } catch (err) {
-    console.error(`❌ [formatChat] Error: ${err.message} at ${timestamp}`);
+    console.error(`[formatChat] Error: ${err.message} at ${ts}`);
     return null;
   }
 };
@@ -868,58 +941,247 @@ export const upsertContacts = async (req, res) => {
   }
 };
 
+// export const getChatList = async (req, res) => {
+//   const timestamp = logTimestamp();
+//   try {
+//     console.log(
+//       `[getChatList] Processing request: query=${JSON.stringify(
+//         req.query
+//       )}, userId=${req.user?._id}, phone=${req.user?.phone} at ${timestamp}`
+//     );
+//     const myPhone = normalizePhoneNumber(req.user.phone);
+//     const userId = req.user._id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 20;
+
+//     if (!userId || !myPhone) {
+//       console.error(`❌ [getChatList] Missing userId or phone at ${timestamp}`);
+//       return res.status(401).json({
+//         success: false,
+//         error: "Unauthorized: Missing user ID or phone",
+//       });
+//     }
+//     if (page < 1 || limit < 1 || limit > 100) {
+//       console.error(
+//         `❌ [getChatList] Invalid pagination: page=${page}, limit=${limit} at ${timestamp}`
+//       );
+//       return res.status(400).json({
+//         success: false,
+//         error:
+//           "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+//       });
+//     }
+
+//     const skip = (page - 1) * limit;
+//     const myProfile = await Profile.findOne({ phone: myPhone });
+//     if (!myProfile) {
+//       console.error(
+//         `❌ [getChatList] Profile not found: phone=${myPhone} at ${timestamp}`
+//       );
+//       return res
+//         .status(404)
+//         .json({ success: false, error: "Your profile not found" });
+//     }
+
+//     const blocked = await Block.find({ blockerId: myProfile._id }).select(
+//       "blockedId"
+//     );
+//     const blockedIds = blocked.map((b) => b.blockedId.toString());
+//     console.log(
+//       `[getChatList] Found ${blocked.length} blocked users: ${blockedIds.join(
+//         ", "
+//       )} at ${timestamp}`
+//     );
+
+//     const chats = await Chat.find({
+//       $and: [
+//         { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
+//         { receiverId: { $ne: null } },
+//         { deletedFor: { $ne: myProfile._id } },
+//       ],
+//     })
+//       .sort({ pinned: -1, createdAt: -1 })
+//       .populate(
+//         "senderId receiverId",
+//         "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+//       );
+//     console.log(`[getChatList] Found ${chats.length} chats at ${timestamp}`);
+
+//     if (!chats || chats.length === 0) {
+//       console.log(`[getChatList] No chats found at ${timestamp}`);
+//       return res.json({ success: true, page, limit, total: 0, chats: [] });
+//     }
+
+//     const phoneNumbers = [
+//       ...new Set([
+//         ...chats
+//           .map((chat) => normalizePhoneNumber(chat.senderId?.phone))
+//           .filter(Boolean),
+//         ...chats
+//           .map((chat) => normalizePhoneNumber(chat.receiverId?.phone))
+//           .filter(Boolean),
+//       ]),
+//     ];
+//     console.log(
+//       `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
+//     );
+
+//     const [users, contacts] = await Promise.all([
+//       User.find({ phone: { $in: phoneNumbers } }).select(
+//         "phone online lastSeen fcmToken"
+//       ),
+//       Contact.find({ userId, phone: { $in: phoneNumbers } }).select(
+//         "phone customName"
+//       ),
+//     ]);
+//     console.log(
+//       `[getChatList] Found ${users.length} users, ${contacts.length} contacts at ${timestamp}`
+//     );
+
+//     const userMap = new Map(
+//       users.map((u) => [normalizePhoneNumber(u.phone), u])
+//     );
+//     const contactMap = new Map(
+//       contacts.map((c) => [
+//         normalizePhoneNumber(c.phone),
+//         c.customName || null, // Preserve exact customName
+//       ])
+//     );
+
+//     const blockedSet = new Set(blockedIds);
+//     const chatMap = new Map();
+
+//     for (const chat of chats) {
+//       if (!chat.senderId || !chat.receiverId) {
+//         console.warn(
+//           `[getChatList] Skipping chat ${chat._id}: missing senderId or receiverId at ${timestamp}`
+//         );
+//         continue;
+//       }
+
+//       const otherProfileId =
+//         chat.senderId._id.toString() === myProfile._id.toString()
+//           ? chat.receiverId._id.toString()
+//           : chat.senderId._id.toString();
+
+//       if (!chatMap.has(otherProfileId)) {
+//         const otherProfile =
+//           chat.senderId._id.toString() === myProfile._id.toString()
+//             ? chat.receiverId
+//             : chat.senderId;
+//         const otherPhone = normalizePhoneNumber(otherProfile.phone);
+//         const customName = contactMap.get(otherPhone) || null;
+//         const displayName = otherProfile.isNumberVisible
+//           ? otherPhone
+//           : otherProfile.displayName || "Unknown";
+
+//         console.log(
+//           `[getChatList] Profile: phone=${otherPhone}, displayName=${displayName}, customName=${customName} at ${timestamp}`
+//         );
+
+//         chatMap.set(otherProfileId, {
+//           profile: {
+//             id: otherProfile._id.toString(),
+//             phone: otherProfile.phone,
+//             displayName, // From profile only
+//             customName, // Exact customName from contacts
+//             randomNumber: otherProfile.randomNumber || "",
+//             avatarUrl: otherProfile.avatarUrl || "",
+//             online: userMap.get(otherPhone)?.online || false,
+//             lastSeen: userMap.get(otherPhone)?.lastSeen?.toISOString() || null,
+//             fcmToken:
+//               otherProfile.fcmToken || userMap.get(otherPhone)?.fcmToken || "",
+//             isBlocked: blockedSet.has(otherProfile._id.toString()),
+//           },
+//           latestMessage: chat,
+//           unreadCount:
+//             chat.receiverId._id.toString() === myProfile._id.toString() &&
+//             ["sent", "delivered"].includes(chat.status)
+//               ? 1
+//               : 0,
+//           pinned: chat.pinned || false,
+//         });
+//       } else {
+//         const existing = chatMap.get(otherProfileId);
+//         if (
+//           new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
+//         ) {
+//           console.log(
+//             `[getChatList] Updating latest message: profileId=${otherProfileId}, chatId=${chat._id} at ${timestamp}`
+//           );
+//           existing.latestMessage = chat;
+//           existing.pinned = chat.pinned;
+//         }
+//         if (
+//           chat.receiverId._id.toString() === myProfile._id.toString() &&
+//           ["sent", "delivered"].includes(chat.status)
+//         ) {
+//           existing.unreadCount += 1;
+//         }
+//       }
+//     }
+
+//     const chatList = Array.from(chatMap.values())
+//       .sort((a, b) => {
+//         if (a.pinned && !b.pinned) return -1;
+//         if (!a.pinned && b.pinned) return 1;
+//         return (
+//           new Date(b.latestMessage.createdAt) -
+//           new Date(a.latestMessage.createdAt)
+//         );
+//       })
+//       .slice(skip, skip + limit);
+
+//     const formattedChatList = chatList.map((item) => ({
+//       profile: item.profile,
+//       latestMessage: formatChat(item.latestMessage),
+//       unreadCount: item.unreadCount,
+//       pinned: item.pinned,
+//     }));
+
+//     console.log(
+//       `[getChatList] Response ready: total=${chatMap.size}, chats=${formattedChatList.length} at ${timestamp}`
+//     );
+
+//     return res.json({
+//       success: true,
+//       page,
+//       limit,
+//       total: chatMap.size,
+//       chats: formattedChatList,
+//     });
+//   } catch (err) {
+//     console.error(`❌ [getChatList] Error: ${err.message} at ${timestamp}`);
+//     return res
+//       .status(500)
+//       .json({ success: false, error: "Server error", details: err.message });
+//   }
+// };
+
 export const getChatList = async (req, res) => {
-  const timestamp = logTimestamp();
+  const ts = logTimestamp();
   try {
-    console.log(
-      `[getChatList] Processing request: query=${JSON.stringify(
-        req.query
-      )}, userId=${req.user?._id}, phone=${req.user?.phone} at ${timestamp}`
-    );
-    const myPhone = normalizePhoneNumber(req.user.phone);
+    console.log(`[getChatList] Start – userId=${req.user._id} at ${ts}`);
+
+    const myPhone = norm(req.user.phone);
     const userId = req.user._id;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-
-    if (!userId || !myPhone) {
-      console.error(`❌ [getChatList] Missing userId or phone at ${timestamp}`);
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized: Missing user ID or phone",
-      });
-    }
-    if (page < 1 || limit < 1 || limit > 100) {
-      console.error(
-        `❌ [getChatList] Invalid pagination: page=${page}, limit=${limit} at ${timestamp}`
-      );
-      return res.status(400).json({
-        success: false,
-        error:
-          "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
-      });
-    }
-
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
+
     const myProfile = await Profile.findOne({ phone: myPhone });
-    if (!myProfile) {
-      console.error(
-        `❌ [getChatList] Profile not found: phone=${myPhone} at ${timestamp}`
-      );
+    if (!myProfile)
       return res
         .status(404)
         .json({ success: false, error: "Your profile not found" });
-    }
 
+    // Blocked users
     const blocked = await Block.find({ blockerId: myProfile._id }).select(
       "blockedId"
     );
-    const blockedIds = blocked.map((b) => b.blockedId.toString());
-    console.log(
-      `[getChatList] Found ${blocked.length} blocked users: ${blockedIds.join(
-        ", "
-      )} at ${timestamp}`
-    );
+    const blockedIds = new Set(blocked.map((b) => b.blockedId.toString()));
 
+    // All chats
     const chats = await Chat.find({
       $and: [
         { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
@@ -932,27 +1194,21 @@ export const getChatList = async (req, res) => {
         "senderId receiverId",
         "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
       );
-    console.log(`[getChatList] Found ${chats.length} chats at ${timestamp}`);
 
-    if (!chats || chats.length === 0) {
-      console.log(`[getChatList] No chats found at ${timestamp}`);
+    if (!chats.length)
       return res.json({ success: true, page, limit, total: 0, chats: [] });
-    }
 
+    // Unique phones from chats
     const phoneNumbers = [
-      ...new Set([
-        ...chats
-          .map((chat) => normalizePhoneNumber(chat.senderId?.phone))
-          .filter(Boolean),
-        ...chats
-          .map((chat) => normalizePhoneNumber(chat.receiverId?.phone))
-          .filter(Boolean),
-      ]),
+      ...new Set(
+        chats
+          .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
+          .filter(Boolean)
+          .map(norm)
+      ),
     ];
-    console.log(
-      `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
-    );
 
+    // Users + saved contacts
     const [users, contacts] = await Promise.all([
       User.find({ phone: { $in: phoneNumbers } }).select(
         "phone online lastSeen fcmToken"
@@ -961,94 +1217,64 @@ export const getChatList = async (req, res) => {
         "phone customName"
       ),
     ]);
-    console.log(
-      `[getChatList] Found ${users.length} users, ${contacts.length} contacts at ${timestamp}`
-    );
 
-    const userMap = new Map(
-      users.map((u) => [normalizePhoneNumber(u.phone), u])
-    );
+    const userMap = new Map(users.map((u) => [norm(u.phone), u]));
     const contactMap = new Map(
-      contacts.map((c) => [
-        normalizePhoneNumber(c.phone),
-        c.customName || null, // Preserve exact customName
-      ])
+      contacts.map((c) => [norm(c.phone), c.customName || null])
     );
 
-    const blockedSet = new Set(blockedIds);
     const chatMap = new Map();
 
     for (const chat of chats) {
-      if (!chat.senderId || !chat.receiverId) {
-        console.warn(
-          `[getChatList] Skipping chat ${chat._id}: missing senderId or receiverId at ${timestamp}`
-        );
-        continue;
-      }
+      if (!chat.senderId || !chat.receiverId) continue;
 
-      const otherProfileId =
+      const otherProfile =
         chat.senderId._id.toString() === myProfile._id.toString()
-          ? chat.receiverId._id.toString()
-          : chat.senderId._id.toString();
+          ? chat.receiverId
+          : chat.senderId;
 
-      if (!chatMap.has(otherProfileId)) {
-        const otherProfile =
-          chat.senderId._id.toString() === myProfile._id.toString()
-            ? chat.receiverId
-            : chat.senderId;
-        const otherPhone = normalizePhoneNumber(otherProfile.phone);
-        const customName = contactMap.get(otherPhone) || null;
+      const otherPhone = norm(otherProfile.phone);
+      const customName = contactMap.get(otherPhone);
+      const isBlocked = blockedIds.has(otherProfile._id.toString());
+
+      const key = otherProfile._id.toString();
+
+      if (!chatMap.has(key)) {
         const displayName = otherProfile.isNumberVisible
           ? otherPhone
           : otherProfile.displayName || "Unknown";
 
         console.log(
-          `[getChatList] Profile: phone=${otherPhone}, displayName=${displayName}, customName=${customName} at ${timestamp}`
+          `[getChatList] Profile phone=${otherPhone}, display=${displayName}, custom=${customName}`
         );
 
-        chatMap.set(otherProfileId, {
-          profile: {
-            id: otherProfile._id.toString(),
-            phone: otherProfile.phone,
-            displayName, // From profile only
-            customName, // Exact customName from contacts
-            randomNumber: otherProfile.randomNumber || "",
-            avatarUrl: otherProfile.avatarUrl || "",
-            online: userMap.get(otherPhone)?.online || false,
-            lastSeen: userMap.get(otherPhone)?.lastSeen?.toISOString() || null,
-            fcmToken:
-              otherProfile.fcmToken || userMap.get(otherPhone)?.fcmToken || "",
-            isBlocked: blockedSet.has(otherProfile._id.toString()),
-          },
+        chatMap.set(key, {
+          profile: formatProfile(
+            otherProfile,
+            userMap.get(otherPhone),
+            customName,
+            isBlocked
+          ),
           latestMessage: chat,
-          unreadCount:
-            chat.receiverId._id.toString() === myProfile._id.toString() &&
-            ["sent", "delivered"].includes(chat.status)
-              ? 1
-              : 0,
+          unreadCount: 0,
           pinned: chat.pinned || false,
         });
-      } else {
-        const existing = chatMap.get(otherProfileId);
-        if (
-          new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
-        ) {
-          console.log(
-            `[getChatList] Updating latest message: profileId=${otherProfileId}, chatId=${chat._id} at ${timestamp}`
-          );
-          existing.latestMessage = chat;
-          existing.pinned = chat.pinned;
-        }
-        if (
-          chat.receiverId._id.toString() === myProfile._id.toString() &&
-          ["sent", "delivered"].includes(chat.status)
-        ) {
-          existing.unreadCount += 1;
-        }
+      }
+
+      const entry = chatMap.get(key);
+      if (new Date(chat.createdAt) > new Date(entry.latestMessage.createdAt)) {
+        entry.latestMessage = chat;
+        entry.pinned = chat.pinned;
+      }
+      if (
+        chat.receiverId._id.toString() === myProfile._id.toString() &&
+        ["sent", "delivered"].includes(chat.status)
+      ) {
+        entry.unreadCount += 1;
       }
     }
 
-    const chatList = Array.from(chatMap.values())
+    const list = Array.from(chatMap.values())
       .sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
@@ -1059,31 +1285,26 @@ export const getChatList = async (req, res) => {
       })
       .slice(skip, skip + limit);
 
-    const formattedChatList = chatList.map((item) => ({
+    const formatted = list.map((item) => ({
       profile: item.profile,
       latestMessage: formatChat(item.latestMessage),
       unreadCount: item.unreadCount,
       pinned: item.pinned,
     }));
 
-    console.log(
-      `[getChatList] Response ready: total=${chatMap.size}, chats=${formattedChatList.length} at ${timestamp}`
-    );
-
     return res.json({
       success: true,
       page,
       limit,
       total: chatMap.size,
-      chats: formattedChatList,
+      chats: formatted,
     });
   } catch (err) {
-    console.error(`❌ [getChatList] Error: ${err.message} at ${timestamp}`);
-    return res
-      .status(500)
-      .json({ success: false, error: "Server error", details: err.message });
+    console.error(`[getChatList] ${err.message} at ${ts}`);
+    return res.status(500).json({ success: false, error: "Server error" });
   }
 };
+
 export const deleteUserChat = async (req, res) => {
   try {
     console.log(
