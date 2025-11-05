@@ -1,6 +1,6 @@
 // models/Contact.js
 import mongoose from "mongoose";
-import { normalizePhoneNumber } from "../controllers/profiles.controller"; // <-- ADD "s"
+import { normalizePhoneNumber } from "../controllers/profiles.controller.js";
 
 const contactSchema = new mongoose.Schema(
   {
