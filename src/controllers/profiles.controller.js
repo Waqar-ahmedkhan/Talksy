@@ -991,7 +991,11 @@ export const getChatList = async (req, res) => {
             ? chat.receiverId
             : chat.senderId;
         const otherPhone = otherProfile.phone;
-        const customName = contactMap.get(otherPhone) || null;
+
+        // Merge customName: first from contacts, then from profile, else null
+        const customName =
+          contactMap.get(otherPhone) || otherProfile.customName || null;
+
         const displayName = otherProfile.isNumberVisible
           ? otherPhone
           : otherProfile.displayName || "Unknown";
@@ -1003,9 +1007,9 @@ export const getChatList = async (req, res) => {
         chatMap.set(otherProfileId, {
           profile: {
             id: otherProfile._id.toString(),
-            phone: otherProfile.phone,
-            displayName, // From profile only
-            customName, // Exact customName from contacts
+            phone: otherPhone,
+            displayName,
+            customName, // Now merged properly
             randomNumber: otherProfile.randomNumber || "",
             avatarUrl: otherProfile.avatarUrl || "",
             online: userMap.get(otherPhone)?.online || false,
