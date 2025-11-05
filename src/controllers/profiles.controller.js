@@ -993,7 +993,7 @@ export const getChatList = async (req, res) => {
         "phone online lastSeen fcmToken"
       ),
       Contact.find({
-        userId: myProfile._id,
+        userId: req.user._id,
         phone: { $in: phoneNumbers },
       }).select("phone customName"),
     ]);
