@@ -992,9 +992,10 @@ export const getChatList = async (req, res) => {
       User.find({ phone: { $in: phoneNumbers } }).select(
         "phone online lastSeen fcmToken"
       ),
-      Contact.find({ userId, phone: { $in: phoneNumbers } }).select(
-        "phone customName"
-      ),
+      Contact.find({
+        userId: myProfile._id,
+        phone: { $in: phoneNumbers },
+      }).select("phone customName"),
     ]);
 
     console.log(
