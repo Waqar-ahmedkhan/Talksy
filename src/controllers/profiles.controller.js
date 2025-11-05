@@ -966,7 +966,7 @@ export const getChatList = async (req, res) => {
 
     const userMap = new Map(users.map((u) => [u.phone, u]));
     const contactMap = new Map(
-      contacts.map((c) => [c.phone, c.customName || null])
+      contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
     );
 
     const blockedSet = new Set(blockedIds);
