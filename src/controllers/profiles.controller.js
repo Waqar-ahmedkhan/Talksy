@@ -768,53 +768,419 @@ export const getProfileWithChat = async (req, res) => {
   }
 };
 
+// export const upsertContacts = async (req, res) => {
+//   try {
+//     console.log(
+//       `[upsertContacts] Processing request: body=${JSON.stringify(
+//         req.body
+//       )}, userId=${req.user._id}`
+//     );
+//     const contacts = req.body.contacts; // Expecting an array of { phone, customName }
+//     const userId = req.user._id;
+
+//     if (!Array.isArray(contacts) || contacts.length === 0) {
+//       console.error(
+//         "[upsertContacts] Invalid input: contacts must be a non-empty array"
+//       );
+//       return res
+//         .status(400)
+//         .json({ success: false, error: "Contacts must be a non-empty array" });
+//     }
+
+//     const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+//     const invalidContacts = [];
+//     const validContacts = [];
+
+//     // Validate all contacts
+//     for (const contact of contacts) {
+//       const { phone, customName } = contact;
+
+//       if (!phone || typeof phone !== "string" || !phone.trim()) {
+//         invalidContacts.push({
+//           phone,
+//           error: "Valid phone number is required",
+//         });
+//         continue;
+//       }
+
+//       if (!customName || typeof customName !== "string" || !customName.trim()) {
+//         invalidContacts.push({ phone, error: "Valid custom name is required" });
+//         continue;
+//       }
+
+//       const normalizedPhone = normalizePhoneNumber(phone);
+//       if (!phoneRegex.test(normalizedPhone)) {
+//         invalidContacts.push({ phone, error: "Invalid phone number format" });
+//         continue;
+//       }
+
+//       validContacts.push({
+//         phone: normalizedPhone,
+//         customName: customName.trim(),
+//       });
+//     }
+
+//     if (invalidContacts.length > 0) {
+//       console.error(
+//         `[upsertContacts] Invalid contacts: ${JSON.stringify(invalidContacts)}`
+//       );
+//       return res.status(400).json({
+//         success: false,
+//         error: "Some contacts have invalid data",
+//         invalidContacts,
+//       });
+//     }
+
+//     // Process valid contacts in bulk
+//     const updatePromises = validContacts.map(({ phone, customName }) =>
+//       Contact.findOneAndUpdate(
+//         { userId, phone },
+//         { customName },
+//         { new: true, upsert: true, setDefaultsOnInsert: true }
+//       )
+//     );
+
+//     const updatedContacts = await Promise.all(updatePromises);
+
+//     console.log(
+//       `[upsertContacts] Contacts saved: count=${updatedContacts.length}`
+//     );
+
+//     return res.json({
+//       success: true,
+//       message: "Contacts saved successfully",
+//       contacts: updatedContacts.map((contact) => ({
+//         phone: contact.phone,
+//         customName: contact.customName,
+//       })),
+//     });
+//   } catch (err) {
+//     console.error(`[upsertContacts] Error: ${err.message}`);
+//     return res
+//       .status(500)
+//       .json({ success: false, error: "Server error", details: err.message });
+//   }
+// };
+
+// export const getChatList = async (req, res) => {
+//   const timestamp = logTimestamp();
+//   try {
+//     console.log(
+//       `[getChatList] Processing request: query=${JSON.stringify(
+//         req.query
+//       )}, userId=${req.user?._id}, phone=${req.user?.phone} at ${timestamp}`
+//     );
+//     const myPhone = normalizePhoneNumber(req.user.phone);
+//     const userId = req.user._id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 20;
+
+//     if (!userId || !myPhone) {
+//       console.error(`❌ [getChatList] Missing userId or phone at ${timestamp}`);
+//       return res.status(401).json({
+//         success: false,
+//         error: "Unauthorized: Missing user ID or phone",
+//       });
+//     }
+//     if (page < 1 || limit < 1 || limit > 100) {
+//       console.error(
+//         `❌ [getChatList] Invalid pagination: page=${page}, limit=${limit} at ${timestamp}`
+//       );
+//       return res.status(400).json({
+//         success: false,
+//         error:
+//           "Invalid pagination parameters: page must be >= 1, limit must be 1-100",
+//       });
+//     }
+
+//     const skip = (page - 1) * limit;
+//     const myProfile = await Profile.findOne({ phone: myPhone });
+//     if (!myProfile) {
+//       console.error(
+//         `❌ [getChatList] Profile not found: phone=${myPhone} at ${timestamp}`
+//       );
+//       return res
+//         .status(404)
+//         .json({ success: false, error: "Your profile not found" });
+//     }
+
+//     const blocked = await Block.find({ blockerId: myProfile._id }).select(
+//       "blockedId"
+//     );
+//     const blockedIds = blocked.map((b) => b.blockedId.toString());
+//     console.log(
+//       `[getChatList] Found ${blocked.length} blocked users: ${blockedIds.join(
+//         ", "
+//       )} at ${timestamp}`
+//     );
+
+//     const chats = await Chat.find({
+//       $and: [
+//         { $or: [{ senderId: myProfile._id }, { receiverId: myProfile._id }] },
+//         { receiverId: { $ne: null } },
+//         { deletedFor: { $ne: myProfile._id } },
+//       ],
+//     })
+//       .sort({ pinned: -1, createdAt: -1 })
+//       .populate(
+//         "senderId receiverId",
+//         "phone displayName avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+//       );
+//     console.log(`[getChatList] Found ${chats.length} chats at ${timestamp}`);
+
+//     if (!chats || chats.length === 0) {
+//       console.log(`[getChatList] No chats found at ${timestamp}`);
+//       return res.json({ success: true, page, limit, total: 0, chats: [] });
+//     }
+
+//     // const phoneNumbers = [
+//     //   ...new Set(
+//     //     chats
+//     //       .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
+//     //       .filter(Boolean)
+//     //   ),
+//     // ];
+
+//     // console.log(
+//     //   `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
+//     // );
+
+//     // const [users, contacts] = await Promise.all([
+//     //   User.find({ phone: { $in: phoneNumbers } }).select(
+//     //     "phone online lastSeen fcmToken"
+//     //   ),
+//     //   Contact.find({
+//     //     userId: req.user._id,
+//     //     phone: { $in: phoneNumbers },
+//     //   }).select("phone customName"),
+//     // ]);
+//     // console.log(
+//     //   `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
+//     // );
+
+//     // const userMap = new Map(users.map((u) => [u.phone, u]));
+//     // const contactMap = new Map(
+//     //   contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
+//     // );
+
+//     // ✅ Normalize all phones before querying and mapping
+//     const phoneNumbers = [
+//       ...new Set(
+//         chats
+//           .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
+//           .filter(Boolean)
+//           .map((p) => normalizePhoneNumber(p)) // normalize here
+//       ),
+//     ];
+
+//     console.log(
+//       `[getChatList] Extracted ${phoneNumbers.length} unique (normalized) phone numbers at ${timestamp}`
+//     );
+
+//     const [users, contacts] = await Promise.all([
+//       User.find({ phone: { $in: phoneNumbers } }).select(
+//         "phone online lastSeen fcmToken"
+//       ),
+//       Contact.find({
+//         userId: req.user._id,
+//         phone: { $in: phoneNumbers },
+//       }).select("phone customName"),
+//     ]);
+
+//     console.log(
+//       `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
+//     );
+
+//     // ✅ Normalize for safe map lookups
+//     const userMap = new Map(
+//       users.map((u) => [normalizePhoneNumber(u.phone), u])
+//     );
+
+//     const contactMap = new Map(
+//       contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
+//     );
+
+//     const blockedSet = new Set(blockedIds);
+//     const chatMap = new Map();
+
+//     for (const chat of chats) {
+//       if (!chat.senderId || !chat.receiverId) {
+//         console.warn(
+//           `[getChatList] Skipping chat ${chat._id}: missing senderId or receiverId at ${timestamp}`
+//         );
+//         continue;
+//       }
+
+//       const otherProfileId =
+//         chat.senderId._id.toString() === myProfile._id.toString()
+//           ? chat.receiverId._id.toString()
+//           : chat.senderId._id.toString();
+
+//       if (!chatMap.has(otherProfileId)) {
+//         const otherProfile =
+//           chat.senderId._id.toString() === myProfile._id.toString()
+//             ? chat.receiverId
+//             : chat.senderId;
+//         const otherPhone = otherProfile.phone;
+
+//         // Merge customName: first from contacts, then from profile, else null
+//         const customName =
+//           contactMap.get(otherPhone) || otherProfile.customName || null;
+
+//         const displayName = otherProfile.isNumberVisible
+//           ? otherPhone
+//           : otherProfile.displayName || "Unknown";
+
+//         console.log(
+//           `[getChatList] Profile: phone=${otherPhone}, displayName=${displayName}, customName=${customName} at ${timestamp}`
+//         );
+
+//         chatMap.set(otherProfileId, {
+//           profile: {
+//             id: otherProfile._id.toString(),
+//             phone: otherPhone,
+//             displayName,
+//             customName, // Now merged properly
+//             randomNumber: otherProfile.randomNumber || "",
+//             avatarUrl: otherProfile.avatarUrl || "",
+//             online: userMap.get(otherPhone)?.online || false,
+//             lastSeen: userMap.get(otherPhone)?.lastSeen?.toISOString() || null,
+//             fcmToken:
+//               otherProfile.fcmToken || userMap.get(otherPhone)?.fcmToken || "",
+//             isBlocked: blockedSet.has(otherProfile._id.toString()),
+//           },
+//           latestMessage: chat,
+//           unreadCount:
+//             chat.receiverId._id.toString() === myProfile._id.toString() &&
+//             ["sent", "delivered"].includes(chat.status)
+//               ? 1
+//               : 0,
+//           pinned: chat.pinned || false,
+//         });
+//       } else {
+//         const existing = chatMap.get(otherProfileId);
+//         if (
+//           new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
+//         ) {
+//           console.log(
+//             `[getChatList] Updating latest message: profileId=${otherProfileId}, chatId=${chat._id} at ${timestamp}`
+//           );
+//           existing.latestMessage = chat;
+//           existing.pinned = chat.pinned;
+//         }
+//         if (
+//           chat.receiverId._id.toString() === myProfile._id.toString() &&
+//           ["sent", "delivered"].includes(chat.status)
+//         ) {
+//           existing.unreadCount += 1;
+//         }
+//       }
+//     }
+
+//     const chatList = Array.from(chatMap.values())
+//       .sort((a, b) => {
+//         if (a.pinned && !b.pinned) return -1;
+//         if (!a.pinned && b.pinned) return 1;
+//         return (
+//           new Date(b.latestMessage.createdAt) -
+//           new Date(a.latestMessage.createdAt)
+//         );
+//       })
+//       .slice(skip, skip + limit);
+
+//     const formattedChatList = chatList.map((item) => ({
+//       profile: item.profile,
+//       latestMessage: formatChat(item.latestMessage),
+//       unreadCount: item.unreadCount,
+//       pinned: item.pinned,
+//     }));
+
+//     console.log(
+//       `[getChatList] Response ready: total=${chatMap.size}, chats=${formattedChatList.length} at ${timestamp}`
+//     );
+
+//     return res.json({
+//       success: true,
+//       page,
+//       limit,
+//       total: chatMap.size,
+//       chats: formattedChatList,
+//     });
+//   } catch (err) {
+//     console.error(`❌ [getChatList] Error: ${err.message} at ${timestamp}`);
+//     return res
+//       .status(500)
+//       .json({ success: false, error: "Server error", details: err.message });
+//   }
+// };
 export const upsertContacts = async (req, res) => {
+  const timestamp = logTimestamp();
+  console.log(`[upsertContacts] START: Processing request at ${timestamp}`);
+
   try {
-    console.log(
-      `[upsertContacts] Processing request: body=${JSON.stringify(
-        req.body
-      )}, userId=${req.user._id}`
-    );
-    const contacts = req.body.contacts; // Expecting an array of { phone, customName }
+    const { contacts } = req.body;
     const userId = req.user._id;
 
     if (!Array.isArray(contacts) || contacts.length === 0) {
       console.error(
-        "[upsertContacts] Invalid input: contacts must be a non-empty array"
+        `❌ [upsertContacts] Invalid: contacts must be non-empty array at ${timestamp}`
       );
-      return res
-        .status(400)
-        .json({ success: false, error: "Contacts must be a non-empty array" });
+      return res.status(400).json({
+        success: false,
+        error: "Contacts must be a non-empty array of { phone, customName }",
+      });
     }
 
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    const invalidContacts = [];
     const validContacts = [];
+    const invalidContacts = [];
+    const phoneRegex = /^\+?[0-9]{10,15}$/; // E.164 compatible
 
-    // Validate all contacts
-    for (const contact of contacts) {
+    for (let i = 0; i < contacts.length; i++) {
+      const contact = contacts[i];
+      const index = i + 1;
+
+      if (!contact || typeof contact !== "object") {
+        invalidContacts.push({ index, error: "Not an object" });
+        continue;
+      }
+
       const { phone, customName } = contact;
 
-      if (!phone || typeof phone !== "string" || !phone.trim()) {
+      if (!phone || typeof phone !== "string") {
         invalidContacts.push({
+          index,
           phone,
-          error: "Valid phone number is required",
+          error: "Phone is missing or not string",
         });
         continue;
       }
 
-      if (!customName || typeof customName !== "string" || !customName.trim()) {
-        invalidContacts.push({ phone, error: "Valid custom name is required" });
+      if (
+        !customName ||
+        typeof customName !== "string" ||
+        customName.trim().length === 0
+      ) {
+        invalidContacts.push({
+          index,
+          phone,
+          error: "customName is missing or empty",
+        });
         continue;
       }
 
-      const normalizedPhone = normalizePhoneNumber(phone);
-      if (!phoneRegex.test(normalizedPhone)) {
-        invalidContacts.push({ phone, error: "Invalid phone number format" });
+      const normalizedPhone = normalizePhoneNumber(phone.trim());
+      if (!normalizedPhone || !phoneRegex.test(normalizedPhone)) {
+        invalidContacts.push({
+          index,
+          phone,
+          normalizedPhone,
+          error: "Invalid phone format",
+        });
         continue;
       }
 
       validContacts.push({
+        originalPhone: phone.trim(),
         phone: normalizedPhone,
         customName: customName.trim(),
       });
@@ -822,53 +1188,117 @@ export const upsertContacts = async (req, res) => {
 
     if (invalidContacts.length > 0) {
       console.error(
-        `[upsertContacts] Invalid contacts: ${JSON.stringify(invalidContacts)}`
+        `❌ [upsertContacts] ${invalidContacts.length} invalid contacts:`,
+        invalidContacts
       );
       return res.status(400).json({
         success: false,
-        error: "Some contacts have invalid data",
+        error: "Some contacts are invalid",
         invalidContacts,
+        tip: "Each contact must have valid 'phone' and non-empty 'customName'",
       });
     }
 
-    // Process valid contacts in bulk
-    const updatePromises = validContacts.map(({ phone, customName }) =>
-      Contact.findOneAndUpdate(
-        { userId, phone },
-        { customName },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-      )
-    );
+    if (validContacts.length === 0) {
+      console.log(`[upsertContacts] No valid contacts to save at ${timestamp}`);
+      return res.json({
+        success: true,
+        message: "No valid contacts to save",
+        savedCount: 0,
+      });
+    }
 
-    const updatedContacts = await Promise.all(updatePromises);
+    // Bulk upsert using findOneAndUpdate
+    const savePromises = validContacts.map(async ({ phone, customName }) => {
+      try {
+        const updated = await Contact.findOneAndUpdate(
+          { userId, phone },
+          {
+            userId,
+            phone,
+            customName: validator.escape(customName), // Sanitize
+          },
+          {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true,
+            runValidators: true,
+          }
+        );
+
+        return {
+          phone,
+          customName,
+          saved: true,
+          contactId: updated._id.toString(),
+        };
+      } catch (err) {
+        console.error(
+          `❌ [upsertContacts] Failed to save phone=${phone}:`,
+          err.message
+        );
+        return {
+          phone,
+          customName,
+          saved: false,
+          error: err.message,
+        };
+      }
+    });
+
+    const results = await Promise.all(savePromises);
+
+    const saved = results.filter((r) => r.saved);
+    const failed = results.filter((r) => !r.saved);
 
     console.log(
-      `[upsertContacts] Contacts saved: count=${updatedContacts.length}`
+      `[upsertContacts] SUCCESS: Saved ${saved.length}/${validContacts.length} contacts at ${timestamp}`
     );
+    if (failed.length > 0) {
+      console.error(
+        `[upsertContacts] FAILED ${failed.length} contacts:`,
+        failed
+      );
+    }
+
+    // Log one example saved contact
+    if (saved.length > 0) {
+      console.log(
+        `[upsertContacts] Example saved → phone: ${saved[0].phone}, customName: "${saved[0].customName}"`
+      );
+    }
 
     return res.json({
       success: true,
-      message: "Contacts saved successfully",
-      contacts: updatedContacts.map((contact) => ({
-        phone: contact.phone,
-        customName: contact.customName,
+      message: `Saved ${saved.length} contacts${
+        failed.length > 0 ? `, ${failed.length} failed` : ""
+      }`,
+      savedCount: saved.length,
+      failedCount: failed.length,
+      savedContacts: saved.map((s) => ({
+        phone: s.phone,
+        customName: s.customName,
       })),
+      failedContacts: failed,
     });
   } catch (err) {
-    console.error(`[upsertContacts] Error: ${err.message}`);
-    return res
-      .status(500)
-      .json({ success: false, error: "Server error", details: err.message });
+    console.error(
+      `❌ [upsertContacts] SERVER ERROR: ${err.message} at ${timestamp}`
+    );
+    return res.status(500).json({
+      success: false,
+      error: "Server error while saving contacts",
+      details: err.message,
+    });
   }
 };
-
 export const getChatList = async (req, res) => {
   const timestamp = logTimestamp();
   try {
     console.log(
       `[getChatList] Processing request: query=${JSON.stringify(
         req.query
-      )}, userId=${req.user?._id}, phone=${req.user?.phone} at ${timestamp}`
+      )}, userId=$$ {req.user?._id}, phone= $${req.user?.phone} at ${timestamp}`
     );
     const myPhone = normalizePhoneNumber(req.user.phone);
     const userId = req.user._id;
@@ -909,9 +1339,7 @@ export const getChatList = async (req, res) => {
     );
     const blockedIds = blocked.map((b) => b.blockedId.toString());
     console.log(
-      `[getChatList] Found ${blocked.length} blocked users: ${blockedIds.join(
-        ", "
-      )} at ${timestamp}`
+      `[getChatList] Found ${blocked.length} blocked users at ${timestamp}`
     );
 
     const chats = await Chat.find({
@@ -928,53 +1356,20 @@ export const getChatList = async (req, res) => {
       );
     console.log(`[getChatList] Found ${chats.length} chats at ${timestamp}`);
 
-    if (!chats || chats.length === 0) {
-      console.log(`[getChatList] No chats found at ${timestamp}`);
+    if (!chats.length) {
       return res.json({ success: true, page, limit, total: 0, chats: [] });
     }
 
-    // const phoneNumbers = [
-    //   ...new Set(
-    //     chats
-    //       .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
-    //       .filter(Boolean)
-    //   ),
-    // ];
-
-    // console.log(
-    //   `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
-    // );
-
-    // const [users, contacts] = await Promise.all([
-    //   User.find({ phone: { $in: phoneNumbers } }).select(
-    //     "phone online lastSeen fcmToken"
-    //   ),
-    //   Contact.find({
-    //     userId: req.user._id,
-    //     phone: { $in: phoneNumbers },
-    //   }).select("phone customName"),
-    // ]);
-    // console.log(
-    //   `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
-    // );
-
-    // const userMap = new Map(users.map((u) => [u.phone, u]));
-    // const contactMap = new Map(
-    //   contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
-    // );
-
-    // ✅ Normalize all phones before querying and mapping
     const phoneNumbers = [
       ...new Set(
         chats
           .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
           .filter(Boolean)
-          .map((p) => normalizePhoneNumber(p)) // normalize here
+          .map(normalizePhoneNumber)
       ),
     ];
-
     console.log(
-      `[getChatList] Extracted ${phoneNumbers.length} unique (normalized) phone numbers at ${timestamp}`
+      `[getChatList] Extracted ${phoneNumbers.length} unique phones at ${timestamp}`
     );
 
     const [users, contacts] = await Promise.all([
@@ -986,16 +1381,13 @@ export const getChatList = async (req, res) => {
         phone: { $in: phoneNumbers },
       }).select("phone customName"),
     ]);
-
     console.log(
-      `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
+      `[getChatList] Found ${users.length} users, ${contacts.length} contacts at ${timestamp}`
     );
 
-    // ✅ Normalize for safe map lookups
     const userMap = new Map(
       users.map((u) => [normalizePhoneNumber(u.phone), u])
     );
-
     const contactMap = new Map(
       contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
     );
@@ -1004,83 +1396,67 @@ export const getChatList = async (req, res) => {
     const chatMap = new Map();
 
     for (const chat of chats) {
-      if (!chat.senderId || !chat.receiverId) {
-        console.warn(
-          `[getChatList] Skipping chat ${chat._id}: missing senderId or receiverId at ${timestamp}`
-        );
-        continue;
-      }
+      if (!chat.senderId || !chat.receiverId) continue;
 
-      const otherProfileId =
+      const otherProfile =
         chat.senderId._id.toString() === myProfile._id.toString()
-          ? chat.receiverId._id.toString()
-          : chat.senderId._id.toString();
+          ? chat.receiverId
+          : chat.senderId;
+      const otherProfileId = otherProfile._id.toString();
+      const otherPhone = normalizePhoneNumber(otherProfile.phone); // Ensure normalized
+
+      if (blockedSet.has(otherProfileId)) continue; // Skip blocked
 
       if (!chatMap.has(otherProfileId)) {
-        const otherProfile =
-          chat.senderId._id.toString() === myProfile._id.toString()
-            ? chat.receiverId
-            : chat.senderId;
-        const otherPhone = otherProfile.phone;
-
-        // Merge customName: first from contacts, then from profile, else null
-        const customName =
-          contactMap.get(otherPhone) || otherProfile.customName || null;
-
+        const customName = contactMap.get(otherPhone) || null;
         const displayName = otherProfile.isNumberVisible
           ? otherPhone
           : otherProfile.displayName || "Unknown";
 
         console.log(
-          `[getChatList] Profile: phone=${otherPhone}, displayName=${displayName}, customName=${customName} at ${timestamp}`
+          `[getChatList] Profile: phone=${otherPhone}, displayName=${displayName}, customName=${
+            customName || "null"
+          } at ${timestamp}`
         );
 
         chatMap.set(otherProfileId, {
           profile: {
-            id: otherProfile._id.toString(),
+            id: otherProfileId,
             phone: otherPhone,
             displayName,
-            customName, // Now merged properly
+            customName,
             randomNumber: otherProfile.randomNumber || "",
             avatarUrl: otherProfile.avatarUrl || "",
             online: userMap.get(otherPhone)?.online || false,
             lastSeen: userMap.get(otherPhone)?.lastSeen?.toISOString() || null,
             fcmToken:
               otherProfile.fcmToken || userMap.get(otherPhone)?.fcmToken || "",
-            isBlocked: blockedSet.has(otherProfile._id.toString()),
+            isBlocked: false, // Since we skipped blocked
           },
           latestMessage: chat,
-          unreadCount:
-            chat.receiverId._id.toString() === myProfile._id.toString() &&
-            ["sent", "delivered"].includes(chat.status)
-              ? 1
-              : 0,
+          unreadCount: 0,
           pinned: chat.pinned || false,
         });
-      } else {
-        const existing = chatMap.get(otherProfileId);
-        if (
-          new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
-        ) {
-          console.log(
-            `[getChatList] Updating latest message: profileId=${otherProfileId}, chatId=${chat._id} at ${timestamp}`
-          );
-          existing.latestMessage = chat;
-          existing.pinned = chat.pinned;
-        }
-        if (
-          chat.receiverId._id.toString() === myProfile._id.toString() &&
-          ["sent", "delivered"].includes(chat.status)
-        ) {
-          existing.unreadCount += 1;
-        }
+      }
+
+      const existing = chatMap.get(otherProfileId);
+      if (
+        new Date(chat.createdAt) > new Date(existing.latestMessage.createdAt)
+      ) {
+        existing.latestMessage = chat;
+        existing.pinned = chat.pinned;
+      }
+      if (
+        chat.receiverId._id.toString() === myProfile._id.toString() &&
+        ["sent", "delivered"].includes(chat.status)
+      ) {
+        existing.unreadCount += 1;
       }
     }
 
     const chatList = Array.from(chatMap.values())
       .sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
+        if (a.pinned !== b.pinned) return b.pinned - a.pinned;
         return (
           new Date(b.latestMessage.createdAt) -
           new Date(a.latestMessage.createdAt)
@@ -1096,7 +1472,7 @@ export const getChatList = async (req, res) => {
     }));
 
     console.log(
-      `[getChatList] Response ready: total=${chatMap.size}, chats=${formattedChatList.length} at ${timestamp}`
+      `[getChatList] Response ready: total=${chatMap.size}, page=${page}, chats=${formattedChatList.length} at ${timestamp}`
     );
 
     return res.json({
@@ -1113,6 +1489,7 @@ export const getChatList = async (req, res) => {
       .json({ success: false, error: "Server error", details: err.message });
   }
 };
+
 export const deleteUserChat = async (req, res) => {
   try {
     console.log(
