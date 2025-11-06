@@ -384,7 +384,6 @@ export const createProfile = async (req, res) => {
       );
     }
 
-    // Save profile and update/create user concurrently
     const [savedProfile, user] = await Promise.all([
       profile.save(),
       User.findOneAndUpdate(
@@ -499,7 +498,6 @@ export const getPublicProfiles = async (req, res) => {
         .json({ success: false, error: "Your profile not found" });
     }
 
-    // Get blocked user IDs
     const blocked = await Block.find({ blockerId: myProfile._id }).select(
       "blockedId"
     );
@@ -535,7 +533,6 @@ export const getPublicProfiles = async (req, res) => {
       contacts.map((c) => [c.phone, c.customName || null])
     );
 
-    // Fetch blocked phones for the current user to set isBlocked flag
     const blockedSet = new Set(blocked.map((b) => b.blockedId.toString()));
 
     const response = {
@@ -563,9 +560,6 @@ export const getPublicProfiles = async (req, res) => {
   }
 };
 
-/**
- * Get Profiles from Contacts
- */
 export const getProfilesFromContacts = async (req, res) => {
   try {
     console.log(
@@ -939,16 +933,48 @@ export const getChatList = async (req, res) => {
       return res.json({ success: true, page, limit, total: 0, chats: [] });
     }
 
+    // const phoneNumbers = [
+    //   ...new Set(
+    //     chats
+    //       .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
+    //       .filter(Boolean)
+    //   ),
+    // ];
+
+    // console.log(
+    //   `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
+    // );
+
+    // const [users, contacts] = await Promise.all([
+    //   User.find({ phone: { $in: phoneNumbers } }).select(
+    //     "phone online lastSeen fcmToken"
+    //   ),
+    //   Contact.find({
+    //     userId: req.user._id,
+    //     phone: { $in: phoneNumbers },
+    //   }).select("phone customName"),
+    // ]);
+    // console.log(
+    //   `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
+    // );
+
+    // const userMap = new Map(users.map((u) => [u.phone, u]));
+    // const contactMap = new Map(
+    //   contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
+    // );
+
+    // ✅ Normalize all phones before querying and mapping
     const phoneNumbers = [
       ...new Set(
         chats
           .flatMap((c) => [c.senderId?.phone, c.receiverId?.phone])
           .filter(Boolean)
+          .map((p) => normalizePhoneNumber(p)) // normalize here
       ),
     ];
 
     console.log(
-      `[getChatList] Extracted ${phoneNumbers.length} unique phone numbers at ${timestamp}`
+      `[getChatList] Extracted ${phoneNumbers.length} unique (normalized) phone numbers at ${timestamp}`
     );
 
     const [users, contacts] = await Promise.all([
@@ -960,11 +986,16 @@ export const getChatList = async (req, res) => {
         phone: { $in: phoneNumbers },
       }).select("phone customName"),
     ]);
+
     console.log(
       `[getChatList] Found ${users.length} users, ${contacts.length} saved contacts at ${timestamp}`
     );
 
-    const userMap = new Map(users.map((u) => [u.phone, u]));
+    // ✅ Normalize for safe map lookups
+    const userMap = new Map(
+      users.map((u) => [normalizePhoneNumber(u.phone), u])
+    );
+
     const contactMap = new Map(
       contacts.map((c) => [normalizePhoneNumber(c.phone), c.customName || null])
     );
