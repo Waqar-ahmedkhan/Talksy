@@ -190,155 +190,344 @@ export const initGroupSocket = (server) => {
       }
     });
 
+    // socket.on("create_group", async (data, callback) => {
+    //   console.log(
+    //     `[CREATE_GROUP] Attempting to create group: userId=${
+    //       socket.userId
+    //     }, data=${JSON.stringify(data)}`
+    //   );
+
+    //   try {
+    //     const { name, channelId, members = [], musicUrl, pictureUrl } = data;
+    //     const userId = socket.userId;
+
+    //     if (!userId) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] Not authenticated: socketId=${socket.id}`
+    //       );
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+    //     if (!name || name.trim().length < 3) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid name: ${name}`);
+    //       return callback({
+    //         success: false,
+    //         message: "Group name must be at least 3 characters",
+    //       });
+    //     }
+    //     if (channelId) {
+    //       if (!isValidObjectId(channelId)) {
+    //         console.error(
+    //           `[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}`
+    //         );
+    //         return callback({ success: false, message: "Invalid channel ID" });
+    //       }
+    //       const channel = await Channel.findById(channelId);
+    //       if (!channel) {
+    //         console.error(
+    //           `[CREATE_GROUP_ERROR] Channel not found: channelId=${channelId}`
+    //         );
+    //         return callback({ success: false, message: "Channel not found" });
+    //       }
+    //       console.log(
+    //         `[CREATE_GROUP] Valid channel provided: channelId=${channelId}`
+    //       );
+    //     } else {
+    //       console.log(
+    //         `[CREATE_GROUP] No channel provided, creating standalone group`
+    //       );
+    //     }
+    //     if (musicUrl && !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(musicUrl)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}`);
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid music URL format",
+    //       });
+    //     }
+    //     if (
+    //       pictureUrl &&
+    //       !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)
+    //     ) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid picture URL format",
+    //       });
+    //     }
+    //     if (!members.every(isValidObjectId)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid member IDs: ${members}`);
+    //       return callback({ success: false, message: "Invalid member IDs" });
+    //     }
+
+    //     const validMembers = await User.find({ _id: { $in: members } });
+    //     if (validMembers.length !== members.length) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] One or more members not found: members=${members}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "One or more members not found",
+    //       });
+    //     }
+
+    //     // Inside socket.on("create_group", ...)
+    //     const group = new Group({
+    //       name,
+    //       channelId: channelId || null,
+    //       createdBy: userId,
+    //       members: [...new Set([userId, ...members])],
+    //       admins: [userId], // 👈 Auto-add creator as admin
+    //       musicUrl: musicUrl || null,
+    //       pictureUrl: pictureUrl || null,
+    //     });
+
+    //     // const group = new Group({
+    //     //   name,
+    //     //   channelId: channelId || null, // Optional: Set to null if not provided
+    //     //   createdBy: userId,
+    //     //   members: [...new Set([userId, ...members])],
+    //     //   musicUrl: musicUrl || null,
+    //     //   pictureUrl: pictureUrl || null,
+    //     // });
+
+    //     await group.save();
+    //     console.log(
+    //       `[CREATE_GROUP] Group created: groupId=${group._id}, name=${
+    //         group.name
+    //       }, channelId=${group.channelId || "none"}`
+    //     );
+
+    //     const groupRoom = `group_${group._id}`;
+    //     socket.join(groupRoom);
+    //     console.log(
+    //       `[CREATE_GROUP] Creator joined room: groupId=${group._id}, socketId=${socket.id}`
+    //     );
+
+    //     group.members.forEach((memberId) => {
+    //       const memberSocketId = onlineUsers.get(memberId.toString());
+    //       if (memberSocketId) {
+    //         io.to(memberSocketId).emit("group_created", { group });
+    //         console.log(
+    //           `[CREATE_GROUP] Notified member: memberId=${memberId}, groupId=${group._id}`
+    //         );
+    //         if (group.musicUrl) {
+    //           io.to(memberSocketId).emit("play_group_music", {
+    //             groupId: group._id,
+    //             musicUrl: group.musicUrl,
+    //           });
+    //           console.log(
+    //             `[CREATE_GROUP] Emitted play_group_music to memberId=${memberId}`
+    //           );
+    //         }
+    //       }
+    //     });
+
+    //     callback({ success: true, group });
+    //     console.log(
+    //       `[CREATE_GROUP_SUCCESS] Group creation successful: groupId=${group._id}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[CREATE_GROUP_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+    //     );
+    //     callback({
+    //       success: false,
+    //       message: "Server error",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
+
     socket.on("create_group", async (data, callback) => {
-      console.log(
-        `[CREATE_GROUP] Attempting to create group: userId=${
-          socket.userId
-        }, data=${JSON.stringify(data)}`
-      );
+      const timestamp = logTimestamp();
+      const userId = socket.userId;
 
       try {
-        const { name, channelId, members = [], musicUrl, pictureUrl } = data;
-        const userId = socket.userId;
+        // Debug logging
+        console.log(
+          `[CREATE_GROUP] Attempting: userId=${userId}, data=${JSON.stringify(
+            data
+          )}, timestamp=${timestamp}`
+        );
 
-        if (!userId) {
+        // === AUTHENTICATION & INPUT VALIDATION ===
+        if (!userId || !isValidObjectId(userId)) {
           console.error(
-            `[CREATE_GROUP_ERROR] Not authenticated: socketId=${socket.id}`
+            `[CREATE_GROUP_ERROR] Invalid userId: ${userId}, timestamp=${timestamp}`
           );
           return callback({ success: false, message: "Not authenticated" });
         }
-        if (!name || name.trim().length < 3) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid name: ${name}`);
+
+        const { name, channelId, members = [], musicUrl, pictureUrl } = data;
+
+        // Validate group name
+        if (!name || typeof name !== "string" || name.trim().length < 3) {
+          console.error(
+            `[CREATE_GROUP_ERROR] Invalid name: ${name}, timestamp=${timestamp}`
+          );
           return callback({
             success: false,
             message: "Group name must be at least 3 characters",
           });
         }
+
+        // Validate channelId if provided
         if (channelId) {
           if (!isValidObjectId(channelId)) {
             console.error(
-              `[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}`
+              `[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}, timestamp=${timestamp}`
             );
             return callback({ success: false, message: "Invalid channel ID" });
           }
-          const channel = await Channel.findById(channelId);
+
+          const channel = await Channel.findById(channelId).lean();
           if (!channel) {
             console.error(
-              `[CREATE_GROUP_ERROR] Channel not found: channelId=${channelId}`
+              `[CREATE_GROUP_ERROR] Channel not found: ${channelId}, timestamp=${timestamp}`
             );
             return callback({ success: false, message: "Channel not found" });
           }
-          console.log(
-            `[CREATE_GROUP] Valid channel provided: channelId=${channelId}`
-          );
-        } else {
-          console.log(
-            `[CREATE_GROUP] No channel provided, creating standalone group`
-          );
-        }
-        if (musicUrl && !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(musicUrl)) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}`);
-          return callback({
-            success: false,
-            message: "Invalid music URL format",
-          });
-        }
-        if (
-          pictureUrl &&
-          !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)
-        ) {
-          console.error(
-            `[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}`
-          );
-          return callback({
-            success: false,
-            message: "Invalid picture URL format",
-          });
-        }
-        if (!members.every(isValidObjectId)) {
-          console.error(`[CREATE_GROUP_ERROR] Invalid member IDs: ${members}`);
-          return callback({ success: false, message: "Invalid member IDs" });
         }
 
-        const validMembers = await User.find({ _id: { $in: members } });
-        if (validMembers.length !== members.length) {
+        // === URL VALIDATION (FIXED) ===
+        // Case-insensitive regex that allows query parameters
+        const musicUrlPattern = /^https?:\/\/.+\.(mp3|wav|ogg)(\?.*)?$/i;
+        const pictureUrlPattern =
+          /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i;
+
+        if (musicUrl && !musicUrlPattern.test(musicUrl)) {
           console.error(
-            `[CREATE_GROUP_ERROR] One or more members not found: members=${members}`
+            `[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}, timestamp=${timestamp}`
           );
           return callback({
             success: false,
-            message: "One or more members not found",
+            message:
+              "Invalid music URL format. Must end with .mp3, .wav, or .ogg",
           });
         }
 
-        // Inside socket.on("create_group", ...)
-        const group = new Group({
-          name,
+        if (pictureUrl && !pictureUrlPattern.test(pictureUrl)) {
+          console.error(
+            `[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message:
+              "Invalid picture URL format. Must end with .jpg, .jpeg, .png, .gif, or .webp",
+          });
+        }
+
+        // Validate members array
+        if (!Array.isArray(members)) {
+          console.error(
+            `[CREATE_GROUP_ERROR] Members must be an array, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: "Members must be an array",
+          });
+        }
+
+        // Filter and validate member IDs
+        const validMemberIds = members.filter((id) => isValidObjectId(id));
+        if (validMemberIds.length !== members.length) {
+          console.warn(
+            `[CREATE_GROUP_WARN] Filtered out invalid member IDs, timestamp=${timestamp}`
+          );
+        }
+
+        // Add creator to members
+        const allMemberIds = [
+          ...new Set([userId.toString(), ...validMemberIds]),
+        ];
+
+        // === DATABASE OPERATIONS (OPTIMIZED) ===
+        const [users, channel] = await Promise.all([
+          User.find({ _id: { $in: allMemberIds } })
+            .select("_id displayName")
+            .lean(),
+          channelId ? Channel.findById(channelId).lean() : null,
+        ]);
+
+        if (users.length !== allMemberIds.length) {
+          const foundIds = users.map((u) => u._id.toString());
+          const missing = allMemberIds.filter((id) => !foundIds.includes(id));
+          console.error(
+            `[CREATE_GROUP_ERROR] Members not found: ${missing}, timestamp=${timestamp}`
+          );
+          return callback({
+            success: false,
+            message: `Members not found: ${missing.join(", ")}`,
+          });
+        }
+
+        // === CREATE GROUP ===
+        const group = await Group.create({
+          name: name.trim(),
           channelId: channelId || null,
           createdBy: userId,
-          members: [...new Set([userId, ...members])],
-          admins: [userId], // 👈 Auto-add creator as admin
+          members: allMemberIds,
+          admins: [userId],
           musicUrl: musicUrl || null,
           pictureUrl: pictureUrl || null,
         });
 
-        // const group = new Group({
-        //   name,
-        //   channelId: channelId || null, // Optional: Set to null if not provided
-        //   createdBy: userId,
-        //   members: [...new Set([userId, ...members])],
-        //   musicUrl: musicUrl || null,
-        //   pictureUrl: pictureUrl || null,
-        // });
-
-        await group.save();
         console.log(
-          `[CREATE_GROUP] Group created: groupId=${group._id}, name=${
-            group.name
-          }, channelId=${group.channelId || "none"}`
+          `[CREATE_GROUP] Created: groupId=${group._id}, name=${group.name}, members=${group.members.length}, timestamp=${timestamp}`
         );
 
-        const groupRoom = `group_${group._id}`;
+        // === NOTIFICATIONS ===
+        const groupRoom = getGroupRoom(group._id);
         socket.join(groupRoom);
-        console.log(
-          `[CREATE_GROUP] Creator joined room: groupId=${group._id}, socketId=${socket.id}`
-        );
 
+        // Fetch member profiles for notifications
+        const profiles = await Profile.find({ _id: { $in: allMemberIds } })
+          .select("displayName phone avatarUrl")
+          .lean();
+
+        const profileMap = new Map(profiles.map((p) => [p._id.toString(), p]));
+
+        // Notify members
         group.members.forEach((memberId) => {
           const memberSocketId = onlineUsers.get(memberId.toString());
+          const profile = profileMap.get(memberId.toString());
+
           if (memberSocketId) {
-            io.to(memberSocketId).emit("group_created", { group });
-            console.log(
-              `[CREATE_GROUP] Notified member: memberId=${memberId}, groupId=${group._id}`
-            );
+            this.io.to(memberSocketId).emit("group_created", {
+              group: group.toObject(),
+              memberProfile: formatProfile(profile, null),
+            });
+
             if (group.musicUrl) {
-              io.to(memberSocketId).emit("play_group_music", {
+              this.io.to(memberSocketId).emit("play_group_music", {
                 groupId: group._id,
                 musicUrl: group.musicUrl,
               });
-              console.log(
-                `[CREATE_GROUP] Emitted play_group_music to memberId=${memberId}`
-              );
             }
           }
         });
 
-        callback({ success: true, group });
+        // === SUCCESS RESPONSE ===
+        callback({
+          success: true,
+          group: group.toObject(),
+        });
+
         console.log(
-          `[CREATE_GROUP_SUCCESS] Group creation successful: groupId=${group._id}`
+          `[CREATE_GROUP_SUCCESS] groupId=${group._id}, timestamp=${timestamp}`
         );
       } catch (error) {
         console.error(
-          `[CREATE_GROUP_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+          `[CREATE_GROUP_ERROR] userId=${socket.userId}, error=${error.message}, timestamp=${timestamp}`
         );
+
         callback({
           success: false,
-          message: "Server error",
-          error: error.message,
+          message: error.message || "Server error creating group",
         });
       }
     });
-
     /** Update group picture */
     /** Update group name or picture */
 
