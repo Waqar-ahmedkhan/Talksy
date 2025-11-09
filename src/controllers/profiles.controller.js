@@ -681,6 +681,208 @@ export const getPublicProfiles = async (req, res) => {
 //   }
 // };
 
+// export const getProfilesFromContacts = async (req, res) => {
+//   const timestamp = logTimestamp();
+//   console.log(
+//     `[getProfilesFromContacts] START: userId=${req.user._id}, phone=${req.user.phone} at ${timestamp}`
+//   );
+
+//   try {
+//     const { contacts } = req.body;
+//     const userId = req.user._id;
+
+//     if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+//       console.log(
+//         `[getProfilesFromContacts] No contacts provided at ${timestamp}`
+//       );
+//       return res.json({
+//         success: true,
+//         profiles: [],
+//         message: "No contacts provided",
+//       });
+//     }
+
+//     console.log(
+//       `[getProfilesFromContacts] Validated contacts: count=${contacts.length} at ${timestamp}`
+//     );
+
+//     // Step 1: Determine if contacts are objects or strings
+//     const isObjectArray =
+//       contacts.length > 0 &&
+//       typeof contacts[0] === "object" &&
+//       contacts[0] !== null;
+
+//     if (isObjectArray) {
+//       console.log(
+//         `[getProfilesFromContacts] Processing contacts as objects at ${timestamp}`
+//       );
+//     } else {
+//       console.log(
+//         `[getProfilesFromContacts] Processing contacts as phone strings at ${timestamp}`
+//       );
+//     }
+
+//     // Step 2: Build contactMap (phone → customName) + normalize phones
+//     const contactMap = new Map(); // phone → customName
+//     const phoneSet = new Set(); // for deduplication
+
+//     for (let item of contacts) {
+//       let rawPhone, customName;
+
+//       if (typeof item === "string") {
+//         rawPhone = item;
+//         customName = null;
+//       } else if (typeof item === "object" && item.phone) {
+//         rawPhone = item.phone;
+//         customName = item.customName || null;
+//       } else {
+//         continue;
+//       }
+
+//       const phone = normalizePhoneNumber(rawPhone);
+//       if (!phone) {
+//         console.log(
+//           `[normalizePhoneNumber] Invalid phone skipped: ${rawPhone}`
+//         );
+//         continue;
+//       }
+
+//       if (!phoneSet.has(phone)) {
+//         phoneSet.add(phone);
+//         if (customName && typeof customName === "string" && customName.trim()) {
+//           contactMap.set(phone, customName.trim());
+//         }
+//       }
+//     }
+
+//     console.log(
+//       `[getProfilesFromContacts] Built contactMap: size=${contactMap.size}, unique phones=${phoneSet.size} at ${timestamp}`
+//     );
+
+//     // Step 3: Find users matching these phones
+//     const userPhones = Array.from(phoneSet);
+//     const users = await User.find({ phone: { $in: userPhones } })
+//       .select("phone displayName")
+//       .lean();
+
+//     const userMap = new Map();
+//     users.forEach((u) => userMap.set(u.phone, u));
+
+//     console.log(
+//       `[getProfilesFromContacts] Found ${users.length} users at ${timestamp}`
+//     );
+
+//     // Step 4: Find saved contacts (for future merging)
+//     const savedContacts = await Contact.find({
+//       userId,
+//       phone: { $in: userPhones },
+//     })
+//       .select("phone customName")
+//       .lean();
+
+//     const savedContactMap = new Map();
+//     savedContacts.forEach((c) => savedContactMap.set(c.phone, c.customName));
+
+//     console.log(
+//       `[getProfilesFromContacts] Found ${savedContacts.length} contacts for merging at ${timestamp}`
+//     );
+
+//     // Step 5: Find blocked users
+//     const blocked = await Block.find({
+//       blocker: userId,
+//       blocked: { $in: users.map((u) => u._id) },
+//     })
+//       .select("blocked")
+//       .lean();
+//     const blockedSet = new Set(blocked.map((b) => b.blocked.toString()));
+
+//     // Step 6: Build final profiles
+//     const finalProfiles = [];
+
+//     for (const phone of userPhones) {
+//       const user = userMap.get(phone);
+//       if (!user) continue;
+
+//       const customName =
+//         contactMap.get(phone) || savedContactMap.get(phone) || null;
+//       const isBlocked = blockedSet.has(user._id.toString());
+
+//       finalProfiles.push({
+//         phone: user.phone,
+//         displayName: user.displayName || "Unknown",
+//         customName,
+//         isBlocked,
+//         isRegistered: true,
+//       });
+
+//       console.log(
+//         `[formatProfile] Formatted profile: phone=${phone}, displayName=${
+//           user.displayName
+//         }, customName=${
+//           customName || null
+//         }, isBlocked=${isBlocked} at ${timestamp}`
+//       );
+//     }
+
+//     // === AUTO-SAVE ALL CUSTOM NAMES TO DB ===
+//     console.log(
+//       `[getProfilesFromContacts] AUTO-SAVING ${contactMap.size} contacts to DB for future use at ${timestamp}`
+//     );
+
+//     const contactsToSave = Array.from(contactMap.entries())
+//       .filter(([phone, name]) => name && name.trim())
+//       .map(([phone, customName]) => ({
+//         userId,
+//         phone,
+//         customName: validator.escape(customName.trim()),
+//       }));
+
+//     if (contactsToSave.length > 0) {
+//       const bulkOps = contactsToSave.map((contact) => ({
+//         updateOne: {
+//           filter: { userId: contact.userId, phone: contact.phone },
+//           update: { $set: { customName: contact.customName } },
+//           upsert: true,
+//         },
+//       }));
+
+//       try {
+//         const result = await Contact.bulkWrite(bulkOps, { ordered: false });
+//         console.log(
+//           `[getProfilesFromContacts] AUTO-SAVED: ${result.upsertedCount} new, ${result.modifiedCount} updated, total=${contactsToSave.length} at ${timestamp}`
+//         );
+//       } catch (err) {
+//         console.error(
+//           `[getProfilesFromContacts] Auto-save failed: ${err.message} at ${timestamp}`
+//         );
+//       }
+//     } else {
+//       console.log(
+//         `[getProfilesFromContacts] No custom names to auto-save at ${timestamp}`
+//       );
+//     }
+
+//     console.log(
+//       `[getProfilesFromContacts] Response ready: profiles=${finalProfiles.length} at ${timestamp}`
+//     );
+
+//     return res.json({
+//       success: true,
+//       profiles: finalProfiles,
+//       message: `${finalProfiles.length} profiles loaded`,
+//     });
+//   } catch (err) {
+//     console.error(
+//       `[getProfilesFromContacts] ERROR: ${err.message} at ${timestamp}`
+//     );
+//     return res.status(500).json({
+//       success: false,
+//       error: "Failed to fetch profiles",
+//       details: err.message,
+//     });
+//   }
+// };
+
 export const getProfilesFromContacts = async (req, res) => {
   const timestamp = logTimestamp();
   console.log(
@@ -691,6 +893,7 @@ export const getProfilesFromContacts = async (req, res) => {
     const { contacts } = req.body;
     const userId = req.user._id;
 
+    // ✅ Validate input
     if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
       console.log(
         `[getProfilesFromContacts] No contacts provided at ${timestamp}`
@@ -703,167 +906,149 @@ export const getProfilesFromContacts = async (req, res) => {
     }
 
     console.log(
-      `[getProfilesFromContacts] Validated contacts: count=${contacts.length} at ${timestamp}`
+      `[getProfilesFromContacts] Received ${contacts.length} contacts at ${timestamp}`
     );
 
-    // Step 1: Determine if contacts are objects or strings
-    const isObjectArray =
-      contacts.length > 0 &&
-      typeof contacts[0] === "object" &&
-      contacts[0] !== null;
+    // ✅ Step 1: Build normalized phone list and map request-provided names
+    const phoneSet = new Set();
+    const requestNameMap = new Map(); // phone -> name from request
 
-    if (isObjectArray) {
-      console.log(
-        `[getProfilesFromContacts] Processing contacts as objects at ${timestamp}`
-      );
-    } else {
-      console.log(
-        `[getProfilesFromContacts] Processing contacts as phone strings at ${timestamp}`
-      );
-    }
+    for (let i = 0; i < contacts.length; i++) {
+      const contact = contacts[i];
+      let rawPhone, nameFromRequest;
 
-    // Step 2: Build contactMap (phone → customName) + normalize phones
-    const contactMap = new Map(); // phone → customName
-    const phoneSet = new Set(); // for deduplication
-
-    for (let item of contacts) {
-      let rawPhone, customName;
-
-      if (typeof item === "string") {
-        rawPhone = item;
-        customName = null;
-      } else if (typeof item === "object" && item.phone) {
-        rawPhone = item.phone;
-        customName = item.customName || null;
+      // Handle different contact formats (string or object)
+      if (typeof contact === "string") {
+        rawPhone = contact;
+        nameFromRequest = null;
+      } else if (typeof contact === "object" && contact !== null) {
+        // Support both 'name' and 'customName' fields from Flutter
+        rawPhone = contact.phone;
+        nameFromRequest = contact.name || contact.customName || null;
       } else {
-        continue;
-      }
-
-      const phone = normalizePhoneNumber(rawPhone);
-      if (!phone) {
-        console.log(
-          `[normalizePhoneNumber] Invalid phone skipped: ${rawPhone}`
+        console.warn(
+          `[getProfilesFromContacts] Skipping invalid contact at index ${i}: ${typeof contact}`
         );
         continue;
       }
 
-      if (!phoneSet.has(phone)) {
-        phoneSet.add(phone);
-        if (customName && typeof customName === "string" && customName.trim()) {
-          contactMap.set(phone, customName.trim());
-        }
+      // Normalize phone number
+      const normalizedPhone = normalizePhoneNumber(rawPhone);
+      if (!normalizedPhone) {
+        console.warn(
+          `[getProfilesFromContacts] Skipping invalid phone at index ${i}: ${rawPhone}`
+        );
+        continue;
+      }
+
+      phoneSet.add(normalizedPhone);
+
+      // Store name from request if it exists and is valid
+      if (
+        nameFromRequest &&
+        typeof nameFromRequest === "string" &&
+        nameFromRequest.trim()
+      ) {
+        requestNameMap.set(normalizedPhone, nameFromRequest.trim());
       }
     }
 
+    const phoneNumbers = Array.from(phoneSet);
     console.log(
-      `[getProfilesFromContacts] Built contactMap: size=${contactMap.size}, unique phones=${phoneSet.size} at ${timestamp}`
+      `[getProfilesFromContacts] Processed ${phoneNumbers.length} valid phone numbers at ${timestamp}`
     );
 
-    // Step 3: Find users matching these phones
-    const userPhones = Array.from(phoneSet);
-    const users = await User.find({ phone: { $in: userPhones } })
-      .select("phone displayName")
+    // ✅ Step 2: Fetch FULL Profile and User documents
+    const profiles = await Profile.find({ phone: { $in: phoneNumbers } })
+      .select(
+        "phone displayName randomNumber isVisible isNumberVisible avatarUrl createdAt fcmToken customName"
+      )
       .lean();
 
-    const userMap = new Map();
-    users.forEach((u) => userMap.set(u.phone, u));
+    const profileMap = new Map(profiles.map((p) => [p.phone, p]));
+    console.log(
+      `[getProfilesFromContacts] Found ${profiles.length} profiles at ${timestamp}`
+    );
 
+    const users = await User.find({ phone: { $in: phoneNumbers } })
+      .select("_id phone online lastSeen fcmToken")
+      .lean();
+
+    const userMap = new Map(users.map((u) => [u.phone, u]));
     console.log(
       `[getProfilesFromContacts] Found ${users.length} users at ${timestamp}`
     );
 
-    // Step 4: Find saved contacts (for future merging)
+    // ✅ Step 3: Get saved contacts from DB for name merging
     const savedContacts = await Contact.find({
       userId,
-      phone: { $in: userPhones },
+      phone: { $in: phoneNumbers },
     })
       .select("phone customName")
       .lean();
 
-    const savedContactMap = new Map();
-    savedContacts.forEach((c) => savedContactMap.set(c.phone, c.customName));
-
+    const savedContactMap = new Map(
+      savedContacts.map((c) => [c.phone, c.customName])
+    );
     console.log(
-      `[getProfilesFromContacts] Found ${savedContacts.length} contacts for merging at ${timestamp}`
+      `[getProfilesFromContacts] Found ${savedContacts.length} saved contacts at ${timestamp}`
     );
 
-    // Step 5: Find blocked users
+    // ✅ Step 4: Get blocked users
     const blocked = await Block.find({
       blocker: userId,
       blocked: { $in: users.map((u) => u._id) },
     })
       .select("blocked")
       .lean();
+
     const blockedSet = new Set(blocked.map((b) => b.blocked.toString()));
-
-    // Step 6: Build final profiles
-    const finalProfiles = [];
-
-    for (const phone of userPhones) {
-      const user = userMap.get(phone);
-      if (!user) continue;
-
-      const customName =
-        contactMap.get(phone) || savedContactMap.get(phone) || null;
-      const isBlocked = blockedSet.has(user._id.toString());
-
-      finalProfiles.push({
-        phone: user.phone,
-        displayName: user.displayName || "Unknown",
-        customName,
-        isBlocked,
-        isRegistered: true,
-      });
-
-      console.log(
-        `[formatProfile] Formatted profile: phone=${phone}, displayName=${
-          user.displayName
-        }, customName=${
-          customName || null
-        }, isBlocked=${isBlocked} at ${timestamp}`
-      );
-    }
-
-    // === AUTO-SAVE ALL CUSTOM NAMES TO DB ===
     console.log(
-      `[getProfilesFromContacts] AUTO-SAVING ${contactMap.size} contacts to DB for future use at ${timestamp}`
+      `[getProfilesFromContacts] Found ${blocked.length} blocked users at ${timestamp}`
     );
 
-    const contactsToSave = Array.from(contactMap.entries())
-      .filter(([phone, name]) => name && name.trim())
-      .map(([phone, customName]) => ({
-        userId,
-        phone,
-        customName: validator.escape(customName.trim()),
-      }));
+    // ✅ Step 5: Build final profiles using formatProfile for registered users
+    const finalProfiles = [];
 
-    if (contactsToSave.length > 0) {
-      const bulkOps = contactsToSave.map((contact) => ({
-        updateOne: {
-          filter: { userId: contact.userId, phone: contact.phone },
-          update: { $set: { customName: contact.customName } },
-          upsert: true,
-        },
-      }));
+    for (const phone of phoneNumbers) {
+      const profile = profileMap.get(phone);
+      const user = userMap.get(phone);
 
-      try {
-        const result = await Contact.bulkWrite(bulkOps, { ordered: false });
-        console.log(
-          `[getProfilesFromContacts] AUTO-SAVED: ${result.upsertedCount} new, ${result.modifiedCount} updated, total=${contactsToSave.length} at ${timestamp}`
+      if (profile && user) {
+        // Registered user - use formatProfile for full details
+        const customName =
+          requestNameMap.get(phone) ||
+          savedContactMap.get(phone) ||
+          profile.customName ||
+          null;
+
+        const isBlocked = blockedSet.has(user._id.toString());
+
+        // Use the existing formatProfile helper to ensure consistent response
+        const formattedProfile = formatProfile(
+          profile,
+          user,
+          customName,
+          isBlocked
         );
-      } catch (err) {
-        console.error(
-          `[getProfilesFromContacts] Auto-save failed: ${err.message} at ${timestamp}`
-        );
+        finalProfiles.push(formattedProfile);
+      } else {
+        // Unregistered user - minimal info
+        finalProfiles.push({
+          phone,
+          displayName: phone,
+          customName: requestNameMap.get(phone) || null,
+          isBlocked: false,
+          isRegistered: false,
+          avatarUrl: "", // ✅ Add empty avatarUrl for unregistered
+          id: null, // ✅ Add null id for unregistered
+          userId: null, // ✅ Add null userId for unregistered
+        });
       }
-    } else {
-      console.log(
-        `[getProfilesFromContacts] No custom names to auto-save at ${timestamp}`
-      );
     }
 
     console.log(
-      `[getProfilesFromContacts] Response ready: profiles=${finalProfiles.length} at ${timestamp}`
+      `[getProfilesFromContacts] Response ready: ${finalProfiles.length} profiles at ${timestamp}`
     );
 
     return res.json({
