@@ -1594,6 +1594,215 @@ export const initGroupSocket = (server) => {
     //   }
     // });
 
+    // socket.on(
+    //   "send_voice_message",
+    //   async (
+    //     { senderId, groupId, content, duration, fileType, fileName },
+    //     callback
+    //   ) => {
+    //     const timestamp = moment()
+    //       .tz("Asia/Karachi")
+    //       .format("DD/MM/YYYY, hh:mm:ss a");
+    //     console.log(
+    //       `[SEND_VOICE_MESSAGE] Attempting to send voice message: userId=${
+    //         socket.userId
+    //       }, data=${JSON.stringify(
+    //         { senderId, groupId, content, duration, fileType, fileName },
+    //         null,
+    //         2
+    //       )}, timestamp=${timestamp}`
+    //     );
+    //     try {
+    //       // Step 1: Validate input data
+    //       if (
+    //         !senderId ||
+    //         !groupId ||
+    //         !content ||
+    //         typeof content !== "string" ||
+    //         content.trim() === "" ||
+    //         senderId !== socket.userId ||
+    //         !isValidObjectId(senderId) ||
+    //         !isValidObjectId(groupId) ||
+    //         typeof duration !== "number" ||
+    //         duration <= 0 ||
+    //         duration > 180 ||
+    //         !fileType?.startsWith("audio/")
+    //       ) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Invalid data: senderId=${senderId}, groupId=${groupId}, content=${content}, duration=${duration}, fileType=${fileType}, socketId=${socket.id}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", {
+    //           error:
+    //             "Invalid voice data, duration (max 3 minutes), or fileType (must be audio/*)",
+    //         });
+    //         if (callback)
+    //           callback({
+    //             success: false,
+    //             message: "Invalid voice data, duration, or fileType",
+    //           });
+    //         return;
+    //       }
+    //       const castSenderId = new mongoose.Types.ObjectId(senderId);
+    //       const castGroupId = new mongoose.Types.ObjectId(groupId);
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Casted IDs: senderId=${castSenderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 2: Verify group and membership
+    //       const group = await Group.findById(castGroupId);
+    //       if (!group) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", { error: "Group not found" });
+    //         if (callback)
+    //           callback({ success: false, message: "Group not found" });
+    //         return;
+    //       }
+    //       const isMember = group.members.some((id) => id.equals(castSenderId));
+    //       if (!isMember) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Not authorized: senderId=${castSenderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", {
+    //           error: "Not authorized to send message",
+    //         });
+    //         if (callback)
+    //           callback({
+    //             success: false,
+    //             message: "Not authorized to send message",
+    //           });
+    //         return;
+    //       }
+
+    //       // Step 3: Verify sender profile
+    //       const senderProfile = await Profile.findById(castSenderId).select(
+    //         "displayName phone avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+    //       );
+    //       if (!senderProfile) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Sender profile not found: senderId=${castSenderId}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", { error: "Sender profile not found" });
+    //         if (callback)
+    //           callback({ success: false, message: "Sender profile not found" });
+    //         return;
+    //       }
+
+    //       // Step 4: Create and save chat document
+    //       const chat = new Chat({
+    //         senderId: castSenderId,
+    //         groupId: castGroupId,
+    //         type: "voice",
+    //         content,
+    //         fileType,
+    //         fileName: fileName || undefined,
+    //         duration,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+    //       await chat.save();
+    //       await chat.populate(
+    //         "senderId",
+    //         "displayName phone avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+    //       );
+    //       if (!chat.senderId || !chat.senderId._id) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Populate failed for chat ${chat._id} – deleting, timestamp=${timestamp}`
+    //         );
+    //         await Chat.findByIdAndDelete(chat._id);
+    //         socket.emit("voice_error", {
+    //           error: "Sender profile not found after save",
+    //         });
+    //         if (callback)
+    //           callback({
+    //             success: false,
+    //             message: "Sender profile not found after save",
+    //           });
+    //         return;
+    //       }
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 5: Prepare response payload
+    //       const voiceData = {
+    //         id: chat._id.toString(),
+    //         senderId: chat.senderId._id.toString(),
+    //         groupId: chat.groupId.toString(),
+    //         content: chat.content,
+    //         type: chat.type,
+    //         fileType: chat.fileType,
+    //         fileName: chat.fileName || "",
+    //         duration: chat.duration || 0,
+    //         timestamp: chat.createdAt.toISOString(),
+    //         status: chat.status,
+    //         displayName: chat.senderId.displayName,
+    //       };
+
+    //       // Step 6: Emit to group room
+    //       const groupRoom = `group_${castGroupId}`;
+    //       io.to(groupRoom).emit("receive_voice", voiceData);
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Emitted receive_voice to groupRoom=${groupRoom}, messageId=${chat._id}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 7: Update status to delivered for online members
+    //       const onlineMembers = group.members.filter((memberId) => {
+    //         const memberSocketId = onlineUsers.get(memberId.toString());
+    //         return (
+    //           memberSocketId && memberId.toString() !== castSenderId.toString()
+    //         );
+    //       });
+    //       if (onlineMembers.length > 0) {
+    //         const updatedChat = await Chat.findByIdAndUpdate(
+    //           chat._id,
+    //           { status: "delivered" },
+    //           { new: true }
+    //         );
+    //         if (updatedChat) {
+    //           voiceData.status = "delivered";
+    //           io.to(groupRoom).emit("message_status_update", {
+    //             messageId: chat._id.toString(),
+    //             status: "delivered",
+    //           });
+    //           console.log(
+    //             `[SEND_VOICE_MESSAGE] Updated status to delivered: messageId=${chat._id}, onlineMembers=${onlineMembers.length}, timestamp=${timestamp}`
+    //           );
+    //         }
+    //       }
+
+    //       // Step 8: Notify sender
+    //       socket.emit("voice_sent", voiceData);
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Emitted voice_sent to senderId=${castSenderId}, messageId=${chat._id}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 9: Send success response
+    //       if (callback)
+    //         callback({
+    //           success: true,
+    //           id: chat._id.toString(),
+    //           message: voiceData,
+    //         });
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE_SUCCESS] Voice message sent: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+    //     } catch (error) {
+    //       console.error(
+    //         `❌ [SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}, stack=${error.stack}, timestamp=${timestamp}`
+    //       );
+    //       socket.emit("voice_error", { error: "Failed to send voice message" });
+    //       if (callback)
+    //         callback({
+    //           success: false,
+    //           message: "Server error",
+    //           error: error.message,
+    //         });
+    //     }
+    //   }
+    // );
+
     socket.on(
       "send_voice_message",
       async (
@@ -1675,23 +1884,45 @@ export const initGroupSocket = (server) => {
             return;
           }
 
-          // Step 3: Verify sender profile
-          const senderProfile = await Profile.findById(castSenderId).select(
-            "displayName phone avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+          // Step 3: Verify sender user and get displayName
+          console.log(
+            `[SEND_VOICE_MESSAGE_DEBUG] Step 3: Querying User by _id: ${castSenderId.toString()}, timestamp=${timestamp}`
           );
-          if (!senderProfile) {
+          const user = await User.findById(castSenderId).select(
+            "displayName phone"
+          );
+          console.log(
+            `[SEND_VOICE_MESSAGE_DEBUG] User query result: ${
+              user ? "Found" : "Not Found"
+            }, user=${JSON.stringify(
+              user ? user.toObject() : null,
+              null,
+              2
+            )}, timestamp=${timestamp}`
+          );
+          if (!user) {
             console.error(
-              `❌ [SEND_VOICE_MESSAGE_ERROR] Sender profile not found: senderId=${castSenderId}, timestamp=${timestamp}`
+              `❌ [SEND_VOICE_MESSAGE_ERROR] User not found in database: senderId=${castSenderId}, timestamp=${timestamp}`
             );
-            socket.emit("voice_error", { error: "Sender profile not found" });
+            socket.emit("voice_error", {
+              error: "User not found - please verify your account.",
+            });
             if (callback)
-              callback({ success: false, message: "Sender profile not found" });
+              callback({
+                success: false,
+                message: "User not found - please verify your account.",
+              });
             return;
           }
+          const senderDisplayName = user.displayName;
+          console.log(
+            `[SEND_VOICE_MESSAGE_DEBUG] Found user: senderId=${castSenderId}, displayName=${senderDisplayName}, timestamp=${timestamp}`
+          );
 
           // Step 4: Create and save chat document
           const chat = new Chat({
             senderId: castSenderId,
+            senderDisplayName, // Store displayName directly
             groupId: castGroupId,
             type: "voice",
             content,
@@ -1702,25 +1933,6 @@ export const initGroupSocket = (server) => {
             deletedFor: [],
           });
           await chat.save();
-          await chat.populate(
-            "senderId",
-            "displayName phone avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
-          );
-          if (!chat.senderId || !chat.senderId._id) {
-            console.error(
-              `❌ [SEND_VOICE_MESSAGE_ERROR] Populate failed for chat ${chat._id} – deleting, timestamp=${timestamp}`
-            );
-            await Chat.findByIdAndDelete(chat._id);
-            socket.emit("voice_error", {
-              error: "Sender profile not found after save",
-            });
-            if (callback)
-              callback({
-                success: false,
-                message: "Sender profile not found after save",
-              });
-            return;
-          }
           console.log(
             `[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`
           );
@@ -1728,7 +1940,8 @@ export const initGroupSocket = (server) => {
           // Step 5: Prepare response payload
           const voiceData = {
             id: chat._id.toString(),
-            senderId: chat.senderId._id.toString(),
+            senderId: chat.senderId.toString(),
+            senderDisplayName: chat.senderDisplayName,
             groupId: chat.groupId.toString(),
             content: chat.content,
             type: chat.type,
@@ -1737,7 +1950,7 @@ export const initGroupSocket = (server) => {
             duration: chat.duration || 0,
             timestamp: chat.createdAt.toISOString(),
             status: chat.status,
-            displayName: chat.senderId.displayName,
+            displayName: chat.senderDisplayName, // Keep for backward compatibility
           };
 
           // Step 6: Emit to group room
@@ -1802,6 +2015,7 @@ export const initGroupSocket = (server) => {
         }
       }
     );
+
     /** Typing indicator */
     socket.on("typing", ({ groupId, typing }) => {
       console.log(
