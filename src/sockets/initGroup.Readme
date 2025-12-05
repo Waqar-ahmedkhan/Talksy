@@ -11,6 +11,7 @@ import mongoose from "mongoose";
 const logTimestamp = () =>
   moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
 
+// Normalize phone number function
 export const normalizePhoneNumber = (phone) => {
   const timestamp = logTimestamp();
   if (!phone || typeof phone !== "string") {
@@ -21,7 +22,7 @@ export const normalizePhoneNumber = (phone) => {
   }
   let normalized = phone.trim().replace(/[\s-]/g, "");
   if (!normalized.startsWith("+") && /^\d{10}$/.test(normalized)) {
-    normalized = `+92${normalized}`;
+    normalized = `+92${normalized}`; // Default to Pakistan country code
   }
   console.log(
     `[normalizePhoneNumber] Normalized: ${phone} -> ${normalized} at ${timestamp}`
@@ -29,7 +30,7 @@ export const normalizePhoneNumber = (phone) => {
   return normalized;
 };
 
-
+// Format profile for response
 export const formatProfile = (
   profile,
   user,
@@ -64,6 +65,37 @@ export const formatProfile = (
   return formatted;
 };
 
+// export const formatProfile = (
+//   profile,
+//   user,
+//   customName = null,
+//   isBlocked = false
+// ) => {
+//   const timestamp = logTimestamp();
+//   const phone = profile?.phone || "";
+//   const name = customName || profile?.displayName || "Unknown";
+//   const displayName = profile?.isNumberVisible ? phone : name;
+//   const formatted = {
+//     id: profile?._id?.toString() || null,
+//     userId: user?._id?.toString() || null,
+//     phone,
+//     displayName,
+//     customName: customName || null,
+//     randomNumber: profile?.randomNumber || "",
+//     isVisible: profile?.isVisible ?? false,
+//     isNumberVisible: profile?.isNumberVisible ?? false,
+//     avatarUrl: profile?.avatarUrl || "",
+//     fcmToken: profile?.fcmToken || user?.fcmToken || "",
+//     createdAt: profile?.createdAt?.toISOString() || null,
+//     online: user?.online ?? false,
+//     lastSeen: user?.lastSeen?.toISOString() || null,
+//     isBlocked,
+//   };
+//   console.log(
+//     `[formatProfile] Formatted profile: phone=${phone}, displayName=${displayName}, customName=${customName}, isBlocked=${isBlocked} at ${timestamp}`
+//   );
+//   return formatted;
+// };
 
 export const getGroupRoom = (groupId) => `group_${groupId}`;
 
@@ -159,6 +191,303 @@ export const initGroupSocket = (server) => {
       }
     });
 
+    // socket.on("create_group", async (data, callback) => {
+    //   console.log(
+    //     `[CREATE_GROUP] Attempting to create group: userId=${
+    //       socket.userId
+    //     }, data=${JSON.stringify(data)}`
+    //   );
+
+    //   try {
+    //     const { name, channelId, members = [], musicUrl, pictureUrl } = data;
+    //     const userId = socket.userId;
+
+    //     if (!userId) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] Not authenticated: socketId=${socket.id}`
+    //       );
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+    //     if (!name || name.trim().length < 3) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid name: ${name}`);
+    //       return callback({
+    //         success: false,
+    //         message: "Group name must be at least 3 characters",
+    //       });
+    //     }
+    //     if (channelId) {
+    //       if (!isValidObjectId(channelId)) {
+    //         console.error(
+    //           `[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}`
+    //         );
+    //         return callback({ success: false, message: "Invalid channel ID" });
+    //       }
+    //       const channel = await Channel.findById(channelId);
+    //       if (!channel) {
+    //         console.error(
+    //           `[CREATE_GROUP_ERROR] Channel not found: channelId=${channelId}`
+    //         );
+    //         return callback({ success: false, message: "Channel not found" });
+    //       }
+    //       console.log(
+    //         `[CREATE_GROUP] Valid channel provided: channelId=${channelId}`
+    //       );
+    //     } else {
+    //       console.log(
+    //         `[CREATE_GROUP] No channel provided, creating standalone group`
+    //       );
+    //     }
+    //     if (musicUrl && !/^https?:\/\/.*\.(mp3|wav|ogg)$/.test(musicUrl)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}`);
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid music URL format",
+    //       });
+    //     }
+    //     if (
+    //       pictureUrl &&
+    //       !/^https?:\/\/.*\.(jpg|jpeg|png|gif)$/.test(pictureUrl)
+    //     ) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Invalid picture URL format",
+    //       });
+    //     }
+    //     if (!members.every(isValidObjectId)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid member IDs: ${members}`);
+    //       return callback({ success: false, message: "Invalid member IDs" });
+    //     }
+
+    //     const validMembers = await User.find({ _id: { $in: members } });
+    //     if (validMembers.length !== members.length) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] One or more members not found: members=${members}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "One or more members not found",
+    //       });
+    //     }
+
+    //     // Inside socket.on("create_group", ...)
+    //     const group = new Group({
+    //       name,
+    //       channelId: channelId || null,
+    //       createdBy: userId,
+    //       members: [...new Set([userId, ...members])],
+    //       admins: [userId], // 👈 Auto-add creator as admin
+    //       musicUrl: musicUrl || null,
+    //       pictureUrl: pictureUrl || null,
+    //     });
+
+    //     // const group = new Group({
+    //     //   name,
+    //     //   channelId: channelId || null, // Optional: Set to null if not provided
+    //     //   createdBy: userId,
+    //     //   members: [...new Set([userId, ...members])],
+    //     //   musicUrl: musicUrl || null,
+    //     //   pictureUrl: pictureUrl || null,
+    //     // });
+
+    //     await group.save();
+    //     console.log(
+    //       `[CREATE_GROUP] Group created: groupId=${group._id}, name=${
+    //         group.name
+    //       }, channelId=${group.channelId || "none"}`
+    //     );
+
+    //     const groupRoom = `group_${group._id}`;
+    //     socket.join(groupRoom);
+    //     console.log(
+    //       `[CREATE_GROUP] Creator joined room: groupId=${group._id}, socketId=${socket.id}`
+    //     );
+
+    //     group.members.forEach((memberId) => {
+    //       const memberSocketId = onlineUsers.get(memberId.toString());
+    //       if (memberSocketId) {
+    //         io.to(memberSocketId).emit("group_created", { group });
+    //         console.log(
+    //           `[CREATE_GROUP] Notified member: memberId=${memberId}, groupId=${group._id}`
+    //         );
+    //         if (group.musicUrl) {
+    //           io.to(memberSocketId).emit("play_group_music", {
+    //             groupId: group._id,
+    //             musicUrl: group.musicUrl,
+    //           });
+    //           console.log(
+    //             `[CREATE_GROUP] Emitted play_group_music to memberId=${memberId}`
+    //           );
+    //         }
+    //       }
+    //     });
+
+    //     callback({ success: true, group });
+    //     console.log(
+    //       `[CREATE_GROUP_SUCCESS] Group creation successful: groupId=${group._id}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[CREATE_GROUP_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+    //     );
+    //     callback({
+    //       success: false,
+    //       message: "Server error",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
+
+    // socket.on("create_group", async (data, callback) => {
+    //   console.log(
+    //     `[CREATE_GROUP] Attempting: userId=${
+    //       socket.userId
+    //     }, data=${JSON.stringify(data)}`
+    //   );
+
+    //   try {
+    //     const { name, channelId, members = [], musicUrl, pictureUrl } = data;
+    //     const userId = socket.userId;
+
+    //     if (!userId) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] Not authenticated: socketId=${socket.id}`
+    //       );
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+
+    //     if (!name || name.trim().length < 3) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid name: ${name}`);
+    //       return callback({
+    //         success: false,
+    //         message: "Group name must be at least 3 characters",
+    //       });
+    //     }
+
+    //     if (channelId) {
+    //       if (!isValidObjectId(channelId)) {
+    //         console.error(
+    //           `[CREATE_GROUP_ERROR] Invalid channelId: ${channelId}`
+    //         );
+    //         return callback({ success: false, message: "Invalid channel ID" });
+    //       }
+    //       const channel = await Channel.findById(channelId);
+    //       if (!channel) {
+    //         console.error(
+    //           `[CREATE_GROUP_ERROR] Channel not found: channelId=${channelId}`
+    //         );
+    //         return callback({ success: false, message: "Channel not found" });
+    //       }
+    //     }
+
+    //     // ✅ FIXED URL validation - handles query parameters
+    //     const musicUrlPattern = /^https?:\/\/.+\.(mp3|wav|ogg)(\?.*)?$/i;
+    //     const pictureUrlPattern =
+    //       /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i;
+
+    //     if (musicUrl && !musicUrlPattern.test(musicUrl)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Invalid musicUrl: ${musicUrl}`);
+    //       return callback({
+    //         success: false,
+    //         message:
+    //           "Invalid music URL format. Must end with .mp3, .wav, or .ogg",
+    //       });
+    //     }
+
+    //     if (pictureUrl && !pictureUrlPattern.test(pictureUrl)) {
+    //       console.error(
+    //         `[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message:
+    //           "Invalid picture URL format. Must end with .jpg, .jpeg, .png, .gif, or .webp",
+    //       });
+    //     }
+
+    //     if (!Array.isArray(members)) {
+    //       console.error(`[CREATE_GROUP_ERROR] Members must be an array`);
+    //       return callback({
+    //         success: false,
+    //         message: "Members must be an array",
+    //       });
+    //     }
+
+    //     // Validate member IDs
+    //     const validMemberIds = members.filter((id) => isValidObjectId(id));
+    //     if (validMemberIds.length !== members.length) {
+    //       console.warn(`[CREATE_GROUP_WARN] Filtered out invalid member IDs`);
+    //     }
+
+    //     // Add creator to members
+    //     const allMemberIds = [
+    //       ...new Set([userId.toString(), ...validMemberIds]),
+    //     ];
+
+    //     // Verify all members exist
+    //     const users = await User.find({ _id: { $in: allMemberIds } });
+    //     if (users.length !== allMemberIds.length) {
+    //       console.error(`[CREATE_GROUP_ERROR] One or more members not found`);
+    //       return callback({
+    //         success: false,
+    //         message: "One or more members not found",
+    //       });
+    //     }
+
+    //     // Create group
+    //     const group = new Group({
+    //       name: name.trim(),
+    //       channelId: channelId || null,
+    //       createdBy: userId,
+    //       members: allMemberIds,
+    //       admins: [userId],
+    //       musicUrl: musicUrl || null,
+    //       pictureUrl: pictureUrl || null,
+    //     });
+
+    //     await group.save();
+    //     console.log(
+    //       `[CREATE_GROUP] Group created: groupId=${group._id}, name=${group.name}`
+    //     );
+
+    //     const groupRoom = `group_${group._id}`;
+    //     socket.join(groupRoom);
+    //     console.log(`[CREATE_GROUP] Creator joined room: groupId=${group._id}`);
+
+    //     // Notify members
+    //     group.members.forEach((memberId) => {
+    //       const memberSocketId = onlineUsers.get(memberId.toString());
+    //       if (memberSocketId) {
+    //         io.to(memberSocketId).emit("group_created", { group });
+    //         console.log(`[CREATE_GROUP] Notified member: memberId=${memberId}`);
+
+    //         if (group.musicUrl) {
+    //           io.to(memberSocketId).emit("play_group_music", {
+    //             groupId: group._id,
+    //             musicUrl: group.musicUrl,
+    //           });
+    //         }
+    //       }
+    //     });
+
+    //     callback({ success: true, group });
+    //     console.log(
+    //       `[CREATE_GROUP_SUCCESS] Group creation successful: groupId=${group._id}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[CREATE_GROUP_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+    //     );
+    //     callback({
+    //       success: false,
+    //       message: "Server error",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
+
     socket.on("create_group", async (data, callback) => {
       const timestamp = logTimestamp();
       const userId = socket.userId;
@@ -210,7 +539,8 @@ export const initGroupSocket = (server) => {
           }
         }
 
-
+        // === URL VALIDATION (FIXED) ===
+        // Case-insensitive regex that allows query parameters
         const musicUrlPattern = /^https?:\/\/.+\.(mp3|wav|ogg)(\?.*)?$/i;
         const pictureUrlPattern =
           /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i;
@@ -297,7 +627,7 @@ export const initGroupSocket = (server) => {
         );
 
         // === NOTIFICATIONS ===
-        const groupRoom = `group_${group._id}`;
+        const groupRoom = getGroupRoom(group._id);
         socket.join(groupRoom);
 
         // Fetch member profiles for notifications
@@ -1060,6 +1390,405 @@ export const initGroupSocket = (server) => {
       }
     });
 
+    //   try {
+    //     const { groupId, content } = data;
+    //     let senderId = socket.userId;
+
+    //     // 👈 STEP 1: Validate & cast senderId (prevents null save)
+    //     if (!senderId || typeof senderId !== 'string') {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] Invalid senderId: "${senderId}" (not a string)`);
+    //       return callback({ success: false, message: "Invalid sender – join groups first" });
+    //     }
+    //     if (!isValidObjectId(senderId)) {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] senderId not valid ObjectId: "${senderId}"`);
+    //       return callback({ success: false, message: "Invalid user ID format" });
+    //     }
+    //     senderId = new mongoose.Types.ObjectId(senderId);  // 👈 Force cast
+    //     console.log(`[SEND_TEXT_MESSAGE] Casted senderId: ${senderId.toString()}`);
+
+    //     // Validate other inputs
+    //     if (!isValidObjectId(groupId)) {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] Invalid groupId: "${groupId}"`);
+    //       return callback({ success: false, message: "Invalid group ID" });
+    //     }
+    //     if (!content || content.trim() === '') {
+    //       return callback({ success: false, message: "Empty content" });
+    //     }
+
+    //     // Check group & membership
+    //     const group = await Group.findById(groupId);
+    //     if (!group) {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] Group not found: ${groupId}`);
+    //       return callback({ success: false, message: "Group not found" });
+    //     }
+    //     const isMember = group.members.some(id => id.toString() === senderId.toString());
+    //     if (!isMember) {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] Not member: ${senderId} in ${groupId}`);
+    //       return callback({ success: false, message: "Not a group member" });
+    //     }
+
+    //     // Create & save (with error handling)
+    //     const chat = new Chat({
+    //       senderId,  // 👈 Now guaranteed valid ObjectId
+    //       groupId: new mongoose.Types.ObjectId(groupId),  // 👈 Cast for safety
+    //       type: "text",
+    //       content: content.trim(),
+    //       status: "sent",
+    //       deletedFor: [],
+    //     });
+
+    //     await chat.save();
+    //     console.log(`[SEND_TEXT_MESSAGE] Saved raw: senderId=${senderId.toString()}, _id=${chat._id}`);
+
+    //     // 👈 STEP 2: Populate & verify (cleanup if fails)
+    //     await chat.populate("senderId", "displayName phone");  // Add phone if needed
+    //     if (!chat.senderId || !chat.senderId._id) {
+    //       console.error(`[SEND_TEXT_MESSAGE_ERROR] Populate failed! Raw senderId="${senderId}", deleting ${chat._id}`);
+    //       await Chat.findByIdAndDelete(chat._id);  // 👈 Prevent junk in DB
+    //       return callback({ success: false, message: "Sender user not found in database" });
+    //     }
+    //     console.log(`[SEND_TEXT_MESSAGE] Populated success: displayName="${chat.senderId.displayName}"`);
+
+    //     // Emit to room
+    //     const groupRoom = `group_${groupId}`;
+    //     io.to(groupRoom).emit("new_text_message", { message: chat });
+    //     console.log(`[SEND_TEXT_MESSAGE] Emitted to ${groupRoom}`);
+
+    //     // Status update
+    //     setTimeout(async () => {
+    //       await Chat.findByIdAndUpdate(chat._id, { status: "delivered" });
+    //       io.to(groupRoom).emit("message_status_update", { messageId: chat._id, status: "delivered" });
+    //     }, 100);
+
+    //     // Success response (now with populated senderId)
+    //     callback({ success: true, message: chat });
+    //     console.log(`[SEND_TEXT_MESSAGE_SUCCESS] Full response ready: senderId=${chat.senderId._id}`);
+    //   } catch (error) {
+    //     console.error(`[SEND_TEXT_MESSAGE_ERROR] Full error: ${error.message}, stack=${error.stack}`);
+    //     callback({ success: false, message: "Server error saving message", error: error.message });
+    //   }
+    // });
+
+    /** Send voice message */
+    // socket.on("send_voice_message", async (data, callback) => {
+    //   console.log(
+    //     `[SEND_VOICE_MESSAGE] Attempting to send voice message: userId=${
+    //       socket.userId
+    //     }, data=${JSON.stringify(data)}`
+    //   );
+
+    //   try {
+    //     const { groupId, voiceUrl, duration } = data;
+    //     const senderId = socket.userId;
+
+    //     if (!senderId) {
+    //       console.error(
+    //         `[SEND_VOICE_MESSAGE_ERROR] Not authenticated: socketId=${socket.id}`
+    //       );
+    //       return callback({ success: false, message: "Not authenticated" });
+    //     }
+    //     if (!isValidObjectId(groupId)) {
+    //       console.error(
+    //         `[SEND_VOICE_MESSAGE_ERROR] Invalid groupId: ${groupId}`
+    //       );
+    //       return callback({ success: false, message: "Invalid group ID" });
+    //     }
+    //     if (!voiceUrl || !/^https?:\/\/.*\.(mp3|wav|ogg|m4a)$/.test(voiceUrl)) {
+    //       console.error(
+    //         `[SEND_VOICE_MESSAGE_ERROR] Invalid voiceUrl: ${voiceUrl}`
+    //       );
+    //       return callback({ success: false, message: "Invalid voice URL" });
+    //     }
+    //     if (duration > 180) {
+    //       console.error(
+    //         `[SEND_VOICE_MESSAGE_ERROR] Voice message too long: duration=${duration}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Voice message too long (max 3 minutes)",
+    //       });
+    //     }
+
+    //     const group = await Group.findById(groupId);
+    //     if (!group) {
+    //       console.error(
+    //         `[SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${groupId}`
+    //       );
+    //       return callback({ success: false, message: "Group not found" });
+    //     }
+
+    //     const isMember = group.members.some((id) => id.toString() === senderId);
+    //     if (!isMember) {
+    //       console.error(
+    //         `[SEND_VOICE_MESSAGE_ERROR] Not authorized: userId=${senderId}, groupId=${groupId}`
+    //       );
+    //       return callback({
+    //         success: false,
+    //         message: "Not authorized to send message",
+    //       });
+    //     }
+
+    //     const chat = new Chat({
+    //       senderId,
+    //       groupId,
+    //       type: "voice",
+    //       content: voiceUrl,
+    //       duration,
+    //       status: "sent",
+    //     });
+
+    //     await chat.save();
+    //     await chat.populate("senderId", "displayName");
+    //     console.log(
+    //       `[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${groupId}`
+    //     );
+
+    //     const groupRoom = `group_${groupId}`;
+    //     io.to(groupRoom).emit("new_voice_message", { message: chat });
+    //     console.log(
+    //       `[SEND_VOICE_MESSAGE] Emitted new_voice_message to groupId=${groupId}`
+    //     );
+
+    //     setTimeout(async () => {
+    //       const updatedChat = await Chat.findByIdAndUpdate(
+    //         chat._id,
+    //         { status: "delivered" },
+    //         { new: true }
+    //       );
+    //       io.to(groupRoom).emit("message_status_update", {
+    //         messageId: chat._id,
+    //         status: "delivered",
+    //       });
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Updated status to delivered: messageId=${chat._id}`
+    //       );
+    //     }, 100);
+
+    //     callback({ success: true, message: chat });
+    //     console.log(
+    //       `[SEND_VOICE_MESSAGE_SUCCESS] Voice message sent: messageId=${chat._id}, groupId=${groupId}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}`
+    //     );
+    //     callback({
+    //       success: false,
+    //       message: "Server error",
+    //       error: error.message,
+    //     });
+    //   }
+    // });
+
+    // socket.on(
+    //   "send_voice_message",
+    //   async (
+    //     { senderId, groupId, content, duration, fileType, fileName },
+    //     callback
+    //   ) => {
+    //     const timestamp = moment()
+    //       .tz("Asia/Karachi")
+    //       .format("DD/MM/YYYY, hh:mm:ss a");
+    //     console.log(
+    //       `[SEND_VOICE_MESSAGE] Attempting to send voice message: userId=${
+    //         socket.userId
+    //       }, data=${JSON.stringify(
+    //         { senderId, groupId, content, duration, fileType, fileName },
+    //         null,
+    //         2
+    //       )}, timestamp=${timestamp}`
+    //     );
+    //     try {
+    //       // Step 1: Validate input data
+    //       if (
+    //         !senderId ||
+    //         !groupId ||
+    //         !content ||
+    //         typeof content !== "string" ||
+    //         content.trim() === "" ||
+    //         senderId !== socket.userId ||
+    //         !isValidObjectId(senderId) ||
+    //         !isValidObjectId(groupId) ||
+    //         typeof duration !== "number" ||
+    //         duration <= 0 ||
+    //         duration > 180 ||
+    //         !fileType?.startsWith("audio/")
+    //       ) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Invalid data: senderId=${senderId}, groupId=${groupId}, content=${content}, duration=${duration}, fileType=${fileType}, socketId=${socket.id}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", {
+    //           error:
+    //             "Invalid voice data, duration (max 3 minutes), or fileType (must be audio/*)",
+    //         });
+    //         if (callback)
+    //           callback({
+    //             success: false,
+    //             message: "Invalid voice data, duration, or fileType",
+    //           });
+    //         return;
+    //       }
+    //       const castSenderId = new mongoose.Types.ObjectId(senderId);
+    //       const castGroupId = new mongoose.Types.ObjectId(groupId);
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Casted IDs: senderId=${castSenderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 2: Verify group and membership
+    //       const group = await Group.findById(castGroupId);
+    //       if (!group) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", { error: "Group not found" });
+    //         if (callback)
+    //           callback({ success: false, message: "Group not found" });
+    //         return;
+    //       }
+    //       const isMember = group.members.some((id) => id.equals(castSenderId));
+    //       if (!isMember) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Not authorized: senderId=${castSenderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", {
+    //           error: "Not authorized to send message",
+    //         });
+    //         if (callback)
+    //           callback({
+    //             success: false,
+    //             message: "Not authorized to send message",
+    //           });
+    //         return;
+    //       }
+
+    //       // Step 3: Verify sender profile
+    //       const senderProfile = await Profile.findById(castSenderId).select(
+    //         "displayName phone avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+    //       );
+    //       if (!senderProfile) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Sender profile not found: senderId=${castSenderId}, timestamp=${timestamp}`
+    //         );
+    //         socket.emit("voice_error", { error: "Sender profile not found" });
+    //         if (callback)
+    //           callback({ success: false, message: "Sender profile not found" });
+    //         return;
+    //       }
+
+    //       // Step 4: Create and save chat document
+    //       const chat = new Chat({
+    //         senderId: castSenderId,
+    //         groupId: castGroupId,
+    //         type: "voice",
+    //         content,
+    //         fileType,
+    //         fileName: fileName || undefined,
+    //         duration,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+    //       await chat.save();
+    //       await chat.populate(
+    //         "senderId",
+    //         "displayName phone avatarUrl isVisible isNumberVisible randomNumber createdAt fcmToken"
+    //       );
+    //       if (!chat.senderId || !chat.senderId._id) {
+    //         console.error(
+    //           `❌ [SEND_VOICE_MESSAGE_ERROR] Populate failed for chat ${chat._id} – deleting, timestamp=${timestamp}`
+    //         );
+    //         await Chat.findByIdAndDelete(chat._id);
+    //         socket.emit("voice_error", {
+    //           error: "Sender profile not found after save",
+    //         });
+    //         if (callback)
+    //           callback({
+    //             success: false,
+    //             message: "Sender profile not found after save",
+    //           });
+    //         return;
+    //       }
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 5: Prepare response payload
+    //       const voiceData = {
+    //         id: chat._id.toString(),
+    //         senderId: chat.senderId._id.toString(),
+    //         groupId: chat.groupId.toString(),
+    //         content: chat.content,
+    //         type: chat.type,
+    //         fileType: chat.fileType,
+    //         fileName: chat.fileName || "",
+    //         duration: chat.duration || 0,
+    //         timestamp: chat.createdAt.toISOString(),
+    //         status: chat.status,
+    //         displayName: chat.senderId.displayName,
+    //       };
+
+    //       // Step 6: Emit to group room
+    //       const groupRoom = `group_${castGroupId}`;
+    //       io.to(groupRoom).emit("receive_voice", voiceData);
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Emitted receive_voice to groupRoom=${groupRoom}, messageId=${chat._id}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 7: Update status to delivered for online members
+    //       const onlineMembers = group.members.filter((memberId) => {
+    //         const memberSocketId = onlineUsers.get(memberId.toString());
+    //         return (
+    //           memberSocketId && memberId.toString() !== castSenderId.toString()
+    //         );
+    //       });
+    //       if (onlineMembers.length > 0) {
+    //         const updatedChat = await Chat.findByIdAndUpdate(
+    //           chat._id,
+    //           { status: "delivered" },
+    //           { new: true }
+    //         );
+    //         if (updatedChat) {
+    //           voiceData.status = "delivered";
+    //           io.to(groupRoom).emit("message_status_update", {
+    //             messageId: chat._id.toString(),
+    //             status: "delivered",
+    //           });
+    //           console.log(
+    //             `[SEND_VOICE_MESSAGE] Updated status to delivered: messageId=${chat._id}, onlineMembers=${onlineMembers.length}, timestamp=${timestamp}`
+    //           );
+    //         }
+    //       }
+
+    //       // Step 8: Notify sender
+    //       socket.emit("voice_sent", voiceData);
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE] Emitted voice_sent to senderId=${castSenderId}, messageId=${chat._id}, timestamp=${timestamp}`
+    //       );
+
+    //       // Step 9: Send success response
+    //       if (callback)
+    //         callback({
+    //           success: true,
+    //           id: chat._id.toString(),
+    //           message: voiceData,
+    //         });
+    //       console.log(
+    //         `[SEND_VOICE_MESSAGE_SUCCESS] Voice message sent: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+    //     } catch (error) {
+    //       console.error(
+    //         `❌ [SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}, stack=${error.stack}, timestamp=${timestamp}`
+    //       );
+    //       socket.emit("voice_error", { error: "Failed to send voice message" });
+    //       if (callback)
+    //         callback({
+    //           success: false,
+    //           message: "Server error",
+    //           error: error.message,
+    //         });
+    //     }
+    //   }
+    // );
+
     socket.on(
       "send_voice_message",
       async (
@@ -1174,9 +1903,10 @@ export const initGroupSocket = (server) => {
             `[SEND_VOICE_MESSAGE_DEBUG] Found user: senderId=${castSenderId}, displayName=${senderDisplayName}, timestamp=${timestamp}`
           );
 
+          // Step 4: Create and save chat document
           const chat = new Chat({
             senderId: castSenderId,
-            senderDisplayName,
+            senderDisplayName, // Store displayName directly
             groupId: castGroupId,
             type: "voice",
             content,
@@ -1191,6 +1921,7 @@ export const initGroupSocket = (server) => {
             `[SEND_VOICE_MESSAGE] Voice message saved: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`
           );
 
+          // Step 5: Prepare response payload
           const voiceData = {
             id: chat._id.toString(),
             senderId: chat.senderId.toString(),
@@ -1206,12 +1937,14 @@ export const initGroupSocket = (server) => {
             displayName: chat.senderDisplayName, // Keep for backward compatibility
           };
 
+          // Step 6: Emit to group room
           const groupRoom = `group_${castGroupId}`;
           io.to(groupRoom).emit("receive_voice", voiceData);
           console.log(
             `[SEND_VOICE_MESSAGE] Emitted receive_voice to groupRoom=${groupRoom}, messageId=${chat._id}, timestamp=${timestamp}`
           );
 
+          // Step 7: Update status to delivered for online members
           const onlineMembers = group.members.filter((memberId) => {
             const memberSocketId = onlineUsers.get(memberId.toString());
             return (
@@ -1625,6 +2358,539 @@ export const initGroupSocket = (server) => {
         console.error("[UPLOADING_MEDIA_ERROR]", err.message);
       }
     });
+
+    //   console.log(
+    //     `[SEND_MEDIA] Attempting to send media: userId=${
+    //       socket.userId
+    //     }, groupId=${groupId}, files=${files?.length || 0}`
+    //   );
+
+    //   // Use provided callback if passed, else emit error
+    //   const ack =
+    //     callback || ((err) => socket.emit("media_error", { error: err }));
+
+    //   try {
+    //     if (
+    //       !files ||
+    //       !Array.isArray(files) ||
+    //       files.length === 0 ||
+    //       files.length > 10
+    //     ) {
+    //       return ack("Files must be a non-empty array (max 10)");
+    //     }
+    //     if (!groupId || !isValidObjectId(groupId)) {
+    //       return ack("Invalid group ID");
+    //     }
+
+    //     const userId = socket.userId;
+    //     if (!userId) {
+    //       return ack("Not authenticated");
+    //     }
+
+    //     // Validate files (your existing logic)
+    //     for (const file of files) {
+    //       const { type, url, fileType, duration, fileName } = file;
+    //       if (!["image", "video", "file"].includes(type)) {
+    //         return ack(`Invalid media type: ${type}`);
+    //       }
+    //       if (!url || typeof url !== "string" || url.trim() === "") {
+    //         return ack("Each file must have a valid URL");
+    //       }
+    //       if (!fileType || typeof fileType !== "string") {
+    //         return ack("Each file must have a valid MIME type");
+    //       }
+    //       if (type === "image" && !fileType.startsWith("image/")) {
+    //         return ack(`Invalid MIME type for image: ${fileType}`);
+    //       }
+    //       if (type === "video" && !fileType.startsWith("video/")) {
+    //         return ack(`Invalid MIME type for video: ${fileType}`);
+    //       }
+    //       if (
+    //         type === "video" &&
+    //         (typeof duration !== "number" || duration <= 0 || duration > 300)
+    //       ) {
+    //         return ack("Video duration invalid (max 5 minutes)");
+    //       }
+    //       if (type === "file" && (!fileName || typeof fileName !== "string")) {
+    //         return ack("Documents must have a file name");
+    //       }
+    //     }
+
+    //     // Verify group membership (your existing pattern)
+    //     const group = await Group.findById(groupId);
+    //     if (!group) {
+    //       return ack("Group not found");
+    //     }
+    //     const isMember = group.members.some((id) => id.toString() === userId);
+    //     if (!isMember) {
+    //       return ack("Not authorized to send message");
+    //     }
+
+    //     // Create Chat documents (adapted for group-only)
+    //     const chats = [];
+    //     for (const file of files) {
+    //       const { type, url, fileType, duration, fileName } = file;
+    //       const chat = new Chat({
+    //         senderId,
+    //         groupId, // Always set for groups
+    //         type,
+    //         content: url,
+    //         fileType,
+    //         fileName: type === "file" ? fileName : undefined,
+    //         duration: type === "video" ? duration : 0,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+    //       await chat.save();
+    //       await chat.populate("senderId", "displayName"); // For emission
+    //       chats.push(chat);
+    //     }
+
+    //     // Prepare payload (your existing logic, simplified)
+    //     const payload = chats.map((chat) => ({
+    //       id: chat._id.toString(),
+    //       senderId: chat.senderId.toString(),
+    //       groupId: chat.groupId.toString(),
+    //       content: chat.content,
+    //       type: chat.type,
+    //       fileType: chat.fileType,
+    //       fileName: chat.fileName,
+    //       duration: chat.duration,
+    //       timestamp: chat.createdAt,
+    //       status: chat.status,
+    //     }));
+
+    //     const groupRoom = `group_${groupId}`;
+    //     io.to(groupRoom).emit("new_media_message", payload); // Use "new_media_message" to match your text/voice pattern
+    //     console.log(
+    //       `[SEND_MEDIA] Emitted new_media_message to group room: ${groupRoom}`
+    //     );
+
+    //     setTimeout(async () => {
+    //       await Chat.updateMany(
+    //         { _id: { $in: chats.map((c) => c._id) } },
+    //         { status: "delivered" }
+    //       );
+    //       io.to(groupRoom).emit("message_status_update", {
+    //         messageIds: chats.map((c) => c._id),
+    //         status: "delivered",
+    //       });
+    //       console.log(
+    //         `[SEND_MEDIA] Marked ${chats.length} media as delivered: groupId=${groupId}`
+    //       );
+    //     }, 100);
+
+    //     // Respond to sender
+    //     ack(null, { success: true, messages: payload });
+    //     console.log(
+    //       `[SEND_MEDIA_SUCCESS] Media sent: ${chats.length} files to groupId=${groupId}`
+    //     );
+    //   } catch (err) {
+    //     console.error(
+    //       `[SEND_MEDIA_ERROR] Failed: userId=${socket.userId}, error=${err.message}`
+    //     );
+    //     ack(`Server error: ${err.message}`);
+    //   }
+    // });
+    // socket.on("send_media", async (payload, callback) => {
+    //   console.log(
+    //     `[SEND_MEDIA] Exact payload received:`,
+    //     JSON.stringify(payload, null, 2)
+    //   );
+    //   console.log(
+    //     `[SEND_MEDIA] socket.userId="${
+    //       socket.userId
+    //     }" (type: ${typeof socket.userId})`
+    //   );
+
+    //   const { groupId, files } = payload;
+    //   const ack =
+    //     callback || ((err) => socket.emit("media_error", { error: err }));
+
+    //   try {
+    //     let senderId = socket.userId;
+    //     // if (
+    //     //   !senderId ||
+    //     //   typeof senderId !== "string" ||
+    //     //   !isValidObjectId(senderId)
+    //     // ) {
+    //     //   console.error(`[SEND_MEDIA_ERROR] Invalid senderId: "${senderId}"`);
+    //     //   return ack("Invalid sender – join groups first");
+    //     // }
+    //     senderId = new mongoose.Types.ObjectId(senderId);
+    //     console.log(`[SEND_MEDIA] Casted senderId: ${senderId.toString()}`);
+
+    //     // 👈 STEP 2: groupId validation (with fallback log)
+    //     if (!groupId) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] MISSING groupId in payload! Full payload was:`,
+    //         JSON.stringify(payload)
+    //       );
+    //       return ack(
+    //         "No group ID provided – select a group and include { groupId: '...' } in emit"
+    //       );
+    //     }
+    //     if (!isValidObjectId(groupId)) {
+    //       console.error(`[SEND_MEDIA_ERROR] Invalid groupId: "${groupId}"`);
+    //       return ack("Invalid group ID format");
+    //     }
+    //     const castGroupId = new mongoose.Types.ObjectId(groupId);
+    //     console.log(`[SEND_MEDIA] Casted groupId: ${castGroupId.toString()}`);
+
+    //     if (
+    //       !files ||
+    //       !Array.isArray(files) ||
+    //       files.length === 0 ||
+    //       files.length > 10
+    //     ) {
+    //       return ack("Files must be 1-10 items array");
+    //     }
+    //     for (let i = 0; i < files.length; i++) {
+    //       const file = files[i];
+    //       const { type, url, fileType, duration = 0, fileName } = file;
+    //       if (!["image", "video", "file"].includes(type))
+    //         return ack(`Invalid type at ${i}: ${type}`);
+    //       if (!url || typeof url !== "string" || !url.trim())
+    //         return ack(`Invalid URL at ${i}`);
+    //       if (!fileType || typeof fileType !== "string")
+    //         return ack(`Invalid MIME at ${i}: ${fileType}`);
+    //       if (type === "image" && !fileType.startsWith("image/"))
+    //         return ack(`Bad image MIME: ${fileType}`);
+    //       if (type === "video" && !fileType.startsWith("video/"))
+    //         return ack(`Bad video MIME: ${fileType}`);
+    //       if (
+    //         type === "video" &&
+    //         (typeof duration !== "number" || duration < 1 || duration > 300)
+    //       )
+    //         return ack("Video max 5 min");
+    //       if (type === "file" && (!fileName || typeof fileName !== "string"))
+    //         return ack("Files need name");
+    //       console.log(
+    //         `[SEND_MEDIA] File ${i} valid: ${type}, url=${url.substring(
+    //           0,
+    //           50
+    //         )}...`
+    //       );
+    //     }
+
+    //     // Group & membership check
+    //     const group = await Group.findById(castGroupId);
+    //     if (!group) return ack("Group not found");
+    //     const isMember = group.members.some((id) => id.equals(senderId));
+    //     if (!isMember) return ack("Not a group member");
+
+    //     // Create chats
+    //     const chats = [];
+    //     for (const file of files) {
+    //       const { type, url, fileType, duration = 0, fileName } = file;
+    //       const chat = new Chat({
+    //         senderId,
+    //         groupId: castGroupId,
+    //         type,
+    //         content: url,
+    //         fileType,
+    //         fileName: type === "file" ? fileName : undefined,
+    //         duration: type === "video" ? duration : 0,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+    //       await chat.save();
+    //       await chat.populate("senderId", "displayName");
+    //       if (!chat.senderId || !chat.senderId._id) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Populate failed for ${chat._id} – deleting`
+    //         );
+    //         await Chat.findByIdAndDelete(chat._id);
+    //         return ack("Sender not found");
+    //       }
+    //       chats.push(chat);
+    //       console.log(`[SEND_MEDIA] Saved chat ${chat._id}: ${type}`);
+    //     }
+
+    //     // Payload for emit/response
+    //     const responsePayload = chats.map((chat) => ({
+    //       id: chat._id.toString(),
+    //       senderId: chat.senderId.toString(),
+    //       groupId: chat.groupId.toString(),
+    //       content: chat.content,
+    //       type: chat.type,
+    //       fileType: chat.fileType,
+    //       fileName: chat.fileName,
+    //       duration: chat.duration,
+    //       timestamp: chat.createdAt,
+    //       status: chat.status,
+    //       displayName: chat.senderId.displayName,
+    //     }));
+
+    //     const groupRoom = `group_${groupId}`;
+    //     io.to(groupRoom).emit("new_media_message", responsePayload);
+
+    //     setTimeout(async () => {
+    //       await Chat.updateMany(
+    //         { _id: { $in: chats.map((c) => c._id) } },
+    //         { status: "delivered" }
+    //       );
+    //       io.to(groupRoom).emit("message_status_update", {
+    //         messageIds: chats.map((c) => c._id),
+    //         status: "delivered",
+    //       });
+    //     }, 100);
+
+    //     ack(null, { success: true, messages: responsePayload });
+    //     console.log(
+    //       `[SEND_MEDIA_SUCCESS] Sent ${chats.length} files to ${groupId}`
+    //     );
+    //   } catch (error) {
+    //     console.error(`[SEND_MEDIA_ERROR] Full error: ${error.message}`);
+    //     ack(`Server error: ${error.message}`);
+    //   }
+    // });
+
+    // socket.on("send_media", async (payload, callback) => {
+    //   const timestamp = new Date().toLocaleString("en-PK", {
+    //     timeZone: "Asia/Karachi",
+    //   });
+    //   console.log(
+    //     `[SEND_MEDIA] Exact payload received: ${JSON.stringify(
+    //       payload,
+    //       null,
+    //       2
+    //     )}, ` +
+    //       `socket.userId="${socket.userId}" (type: ${typeof socket.userId}), ` +
+    //       `timestamp=${timestamp}`
+    //   );
+
+    //   const { groupId, files } = payload;
+    //   const ack =
+    //     callback || ((err) => socket.emit("media_error", { error: err }));
+
+    //   try {
+    //     // Step 1: Validate senderId
+    //     const senderIdStr = socket.userId;
+    //     if (
+    //       !senderIdStr ||
+    //       typeof senderIdStr !== "string" ||
+    //       !isValidObjectId(senderIdStr)
+    //     ) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] Invalid senderId: "${senderIdStr}" (type: ${typeof senderIdStr}), ` +
+    //           `socketId=${socket.id}, timestamp=${timestamp}`
+    //       );
+    //       return ack("Invalid sender – please join groups first");
+    //     }
+    //     const senderId = new mongoose.Types.ObjectId(senderIdStr);
+    //     console.log(
+    //       `[SEND_MEDIA] Casted senderId: ${senderId.toString()}, timestamp=${timestamp}`
+    //     );
+
+    //     // Step 2: Validate groupId
+    //     if (!groupId) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] MISSING groupId in payload! Full payload: ${JSON.stringify(
+    //           payload
+    //         )}, ` + `timestamp=${timestamp}`
+    //       );
+    //       return ack(
+    //         "No group ID provided – select a group and include { groupId: '...' } in emit"
+    //       );
+    //     }
+    //     if (!isValidObjectId(groupId)) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] Invalid groupId: "${groupId}", timestamp=${timestamp}`
+    //       );
+    //       return ack("Invalid group ID format");
+    //     }
+    //     const castGroupId = new mongoose.Types.ObjectId(groupId);
+    //     console.log(
+    //       `[SEND_MEDIA] Casted groupId: ${castGroupId.toString()}, timestamp=${timestamp}`
+    //     );
+
+    //     // Step 3: Validate files
+    //     if (
+    //       !files ||
+    //       !Array.isArray(files) ||
+    //       files.length === 0 ||
+    //       files.length > 10
+    //     ) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] Invalid files array: length=${
+    //           files?.length || 0
+    //         }, ` + `timestamp=${timestamp}`
+    //       );
+    //       return ack("Files must be a non-empty array (1-10 items)");
+    //     }
+    //     for (let i = 0; i < files.length; i++) {
+    //       const file = files[i];
+    //       const { type, url, fileType, duration = 0, fileName } = file;
+    //       if (!["image", "video", "file"].includes(type)) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Invalid type at index ${i}: ${type}, timestamp=${timestamp}`
+    //         );
+    //         return ack(`Invalid file type at index ${i}: ${type}`);
+    //       }
+    //       if (!url || typeof url !== "string" || !url.trim()) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Invalid URL at index ${i}: ${url}, timestamp=${timestamp}`
+    //         );
+    //         return ack(`Invalid URL at index ${i}`);
+    //       }
+    //       if (!fileType || typeof fileType !== "string") {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Invalid MIME type at index ${i}: ${fileType}, timestamp=${timestamp}`
+    //         );
+    //         return ack(`Invalid MIME type at index ${i}: ${fileType}`);
+    //       }
+    //       if (type === "image" && !fileType.startsWith("image/")) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Bad image MIME at index ${i}: ${fileType}, timestamp=${timestamp}`
+    //         );
+    //         return ack(`Invalid MIME type for image: ${fileType}`);
+    //       }
+    //       if (
+    //         type === "video" &&
+    //         !fileType.startsWith("video/") &&
+    //         fileType !== "application/octet-stream"
+    //       ) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Bad video MIME at index ${i}: ${fileType}, timestamp=${timestamp}`
+    //         );
+    //         return ack(`Invalid MIME type for video: ${fileType}`);
+    //       }
+    //       if (
+    //         type === "video" &&
+    //         (typeof duration !== "number" || duration < 1 || duration > 300)
+    //       ) {
+    //         console.warn(
+    //           `[SEND_MEDIA_WARN] Invalid video duration at index ${i}: ${duration}, proceeding without duration, timestamp=${timestamp}`
+    //         );
+    //         file.duration = 0; // Reset to 0 for invalid duration
+    //       }
+    //       if (type === "file" && (!fileName || typeof fileName !== "string")) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Missing fileName for file at index ${i}, timestamp=${timestamp}`
+    //         );
+    //         return ack("Documents must have a file name");
+    //       }
+    //       console.log(
+    //         `[SEND_MEDIA] File ${i} valid: type=${type}, url=${url.substring(
+    //           0,
+    //           50
+    //         )}..., timestamp=${timestamp}`
+    //       );
+    //     }
+
+    //     // Step 4: Verify group and membership
+    //     const group = await Group.findById(castGroupId);
+    //     if (!group) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+    //       return ack("Group not found");
+    //     }
+    //     const isMember = group.members.some((id) => id.equals(senderId));
+    //     if (!isMember) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] Sender not a member: senderId=${senderId}, groupId=${castGroupId}, timestamp=${timestamp}`
+    //       );
+    //       return ack("Not a group member");
+    //     }
+
+    //     // Step 5: Verify sender profile
+    //     const senderProfile = await Profile.findById(senderId).select(
+    //       "displayName"
+    //     );
+    //     if (!senderProfile) {
+    //       console.error(
+    //         `[SEND_MEDIA_ERROR] Sender profile not found: senderId=${senderId}, timestamp=${timestamp}`
+    //       );
+    //       return ack("Sender profile not found");
+    //     }
+
+    //     // Step 6: Create and save chat documents
+    //     const chats = [];
+    //     for (const file of files) {
+    //       const { type, url, fileType, duration = 0, fileName } = file;
+    //       const chat = new Chat({
+    //         senderId,
+    //         groupId: castGroupId,
+    //         type,
+    //         content: url,
+    //         fileType,
+    //         fileName: type === "file" ? fileName : undefined,
+    //         duration: type === "video" ? duration : 0,
+    //         status: "sent",
+    //         deletedFor: [],
+    //       });
+    //       await chat.save();
+    //       await chat.populate("senderId", "displayName");
+    //       if (!chat.senderId || !chat.senderId._id) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Populate failed for chat ${chat._id} – deleting, timestamp=${timestamp}`
+    //         );
+    //         await Chat.findByIdAndDelete(chat._id);
+    //         return ack("Sender profile not found after save");
+    //       }
+    //       chats.push(chat);
+    //       console.log(
+    //         `[SEND_MEDIA] Saved chat: id=${chat._id}, type=${type}, timestamp=${timestamp}`
+    //       );
+    //     }
+
+    //     // Step 7: Prepare response payload
+    //     const responsePayload = chats.map((chat) => ({
+    //       id: chat._id.toString(),
+    //       senderId: chat.senderId._id.toString(),
+    //       groupId: chat.groupId.toString(),
+    //       content: chat.content,
+    //       type: chat.type,
+    //       fileType: chat.fileType,
+    //       fileName: chat.fileName,
+    //       duration: chat.duration,
+    //       timestamp: chat.createdAt.toISOString(),
+    //       status: chat.status,
+    //       displayName: chat.senderId.displayName,
+    //     }));
+
+    //     // Step 8: Emit to group room
+    //     const groupRoom = `group_${castGroupId}`;
+    //     io.to(groupRoom).emit("new_media_message", responsePayload);
+    //     console.log(
+    //       `[SEND_MEDIA] Emitted new_media_message to groupRoom=${groupRoom}, timestamp=${timestamp}`
+    //     );
+
+    //     // Step 9: Update status to delivered
+    //     setTimeout(async () => {
+    //       try {
+    //         await Chat.updateMany(
+    //           { _id: { $in: chats.map((c) => c._id) } },
+    //           { status: "delivered" }
+    //         );
+    //         io.to(groupRoom).emit("message_status_update", {
+    //           messageIds: chats.map((c) => c._id.toString()),
+    //           status: "delivered",
+    //         });
+    //         console.log(
+    //           `[SEND_MEDIA] Marked ${chats.length} messages as delivered: groupId=${castGroupId}, timestamp=${timestamp}`
+    //         );
+    //       } catch (error) {
+    //         console.error(
+    //           `[SEND_MEDIA_ERROR] Failed to update status: error=${error.message}, timestamp=${timestamp}`
+    //         );
+    //       }
+    //     }, 100);
+
+    //     // Step 10: Send success response
+    //     ack(null, { success: true, messages: responsePayload });
+    //     console.log(
+    //       `[SEND_MEDIA_SUCCESS] Sent ${chats.length} files to groupId=${castGroupId}, timestamp=${timestamp}`
+    //     );
+    //   } catch (error) {
+    //     console.error(
+    //       `[SEND_MEDIA_ERROR] Full error: ${error.message}, stack=${error.stack}, timestamp=${timestamp}`
+    //     );
+    //     ack(`Server error: ${error.message}`);
+    //   }
+    // });
 
     socket.on("send_media", async (payload, callback) => {
       const timestamp = new Date().toLocaleString("en-PK", {
