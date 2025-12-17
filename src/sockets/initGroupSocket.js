@@ -124,7 +124,8 @@ export const initGroupSocket = (server) => {
           `[JOIN_GROUPS] Found ${userGroups.length} groups for userId=${userIdStr}`
         );
 
-        const groupRooms = userGroups.map((gr) => `group_${gr._id}`);
+        // FIX: Use getGroupRoom helper
+        const groupRooms = userGroups.map((gr) => getGroupRoom(gr._id));
         if (groupRooms.length > 0) {
           socket.join(groupRooms);
           console.log(
@@ -297,7 +298,8 @@ export const initGroupSocket = (server) => {
         );
 
         // === NOTIFICATIONS ===
-        const groupRoom = `group_${group._id}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(group._id);
         socket.join(groupRoom);
 
         // Fetch member profiles for notifications
@@ -419,7 +421,8 @@ export const initGroupSocket = (server) => {
             `[ADD_GROUP_MEMBERS] Added ${newMembers.length} members to groupId=${groupId}`
           );
 
-          const groupRoom = `group_${groupId}`;
+          // FIX: Use getGroupRoom helper
+          const groupRoom = getGroupRoom(groupId);
           newMembers.forEach((memberId) => {
             const memberSocketId = onlineUsers.get(memberId);
             if (memberSocketId) {
@@ -535,7 +538,8 @@ export const initGroupSocket = (server) => {
         await group.save();
 
         // Notify all members
-        const groupRoom = `group_${groupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(groupId);
         io.to(groupRoom).emit("group_updated", { group });
 
         callback({ success: true, group });
@@ -633,7 +637,8 @@ export const initGroupSocket = (server) => {
         await Chat.deleteMany({ groupId });
 
         // Notify all members
-        const groupRoom = `group_${groupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(groupId);
         io.to(groupRoom).emit("group_deleted", { groupId });
 
         callback({ success: true, message: "Group deleted" });
@@ -758,11 +763,13 @@ export const initGroupSocket = (server) => {
         if (removedSocketId) {
           io.to(removedSocketId).emit("removed_from_group", { groupId });
           io.to(removedSocketId).emit("stop_group_music", { groupId });
-          io.sockets.sockets.get(removedSocketId)?.leave(`group_${groupId}`);
+          // FIX: Use getGroupRoom helper
+          io.sockets.sockets.get(removedSocketId)?.leave(getGroupRoom(groupId));
         }
 
         // Notify remaining members
-        const groupRoom = `group_${groupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(groupId);
         io.to(groupRoom).emit("group_member_removed", {
           groupId,
           removedMember: memberId,
@@ -987,7 +994,8 @@ export const initGroupSocket = (server) => {
         console.log(
           `[SEND_TEXT_MESSAGE_DEBUG] Step 9: Emitting message to group room, timestamp=${timestamp}`
         );
-        const groupRoom = `group_${castGroupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(castGroupId);
         io.to(groupRoom).emit("new_text_message", { message: chat });
         console.log(
           `[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}, timestamp=${timestamp}`
@@ -1206,7 +1214,8 @@ export const initGroupSocket = (server) => {
             displayName: chat.senderDisplayName, // Keep for backward compatibility
           };
 
-          const groupRoom = `group_${castGroupId}`;
+          // FIX: Use getGroupRoom helper
+          const groupRoom = getGroupRoom(castGroupId);
           io.to(groupRoom).emit("receive_voice", voiceData);
           console.log(
             `[SEND_VOICE_MESSAGE] Emitted receive_voice to groupRoom=${groupRoom}, messageId=${chat._id}, timestamp=${timestamp}`
@@ -1281,7 +1290,8 @@ export const initGroupSocket = (server) => {
         return;
       }
 
-      const groupRoom = `group_${groupId}`;
+      // FIX: Use getGroupRoom helper
+      const groupRoom = getGroupRoom(groupId);
 
       if (typing) {
         if (!typingUsers.has(groupId)) {
@@ -1352,7 +1362,8 @@ export const initGroupSocket = (server) => {
           `[MARK_MESSAGE_READ] Message marked read: messageId=${messageId}`
         );
 
-        const groupRoom = `group_${message.groupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(message.groupId);
         io.to(groupRoom).emit("message_status_update", {
           messageId,
           status: "read",
@@ -1534,7 +1545,8 @@ export const initGroupSocket = (server) => {
           `[DELETE_MESSAGE] Message deleted: messageId=${messageId}, forEveryone=${forEveryone}`
         );
 
-        const groupRoom = `group_${message.groupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(message.groupId);
         io.to(groupRoom).emit("message_deleted", { message });
         console.log(
           `[DELETE_MESSAGE] Emitted message_deleted to groupId=${message.groupId}`
@@ -1577,7 +1589,8 @@ export const initGroupSocket = (server) => {
           return;
         }
 
-        const roomName = `group_${groupId}`;
+        // FIX: Use getGroupRoom helper
+        const roomName = getGroupRoom(groupId);
         socket.join(roomName);
         console.log(
           `[JOIN_GROUP_ROOM] Joined room: groupId=${groupId}, socketId=${socket.id}`
@@ -1616,7 +1629,8 @@ export const initGroupSocket = (server) => {
         const group = await Group.findById(groupId);
         if (!group) return;
 
-        const groupRoom = `group_${groupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(groupId);
         socket
           .to(groupRoom)
           .emit("uploading_media", { senderId, groupId, uploading });
@@ -1838,7 +1852,8 @@ export const initGroupSocket = (server) => {
         }));
 
         // Step 8: Emit to group room
-        const groupRoom = `group_${castGroupId}`;
+        // FIX: Use getGroupRoom helper
+        const groupRoom = getGroupRoom(castGroupId);
         io.to(groupRoom).emit("new_media_message", responsePayload);
         console.log(
           `[SEND_MEDIA] Emitted new_media_message to groupRoom=${groupRoom}, timestamp=${timestamp}`
@@ -1889,7 +1904,8 @@ export const initGroupSocket = (server) => {
         return;
       }
 
-      const roomName = `group_${groupId}`;
+      // FIX: Use getGroupRoom helper
+      const roomName = getGroupRoom(groupId);
       socket.leave(roomName);
       socket.emit("stop_group_music", { groupId });
       socket.emit("group_room_left", { groupId });
@@ -1946,7 +1962,8 @@ export const initGroupSocket = (server) => {
         typingUsers.forEach((userSet, groupId) => {
           if (userSet.has(disconnectedUserId)) {
             userSet.delete(disconnectedUserId);
-            const groupRoom = `group_${groupId}`;
+            // FIX: Use getGroupRoom helper
+            const groupRoom = getGroupRoom(groupId);
             socket.to(groupRoom).emit("user_typing", {
               userId: disconnectedUserId,
               groupId,
