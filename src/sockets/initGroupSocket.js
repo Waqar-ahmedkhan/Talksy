@@ -215,8 +215,6 @@ export const initGroupSocket = (server) => {
             return callback({ success: false, message: "Channel not found" });
           }
         }
-
-
         const musicUrlPattern = /^https?:\/\/.+\.(mp3|wav|ogg)(\?.*)?$/i;
         const pictureUrlPattern =
           /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i;
