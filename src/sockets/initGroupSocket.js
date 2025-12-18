@@ -9,9 +9,7 @@ import { isValidObjectId } from "mongoose";
 import mongoose from "mongoose";
 
 
-export function getGroupRoom(groupId) {
-  return `group_${groupId}`;
-}
+export const getGroupRoom = (groupId) => `group_${groupId}`;
 
 const logTimestamp = () =>
   moment().tz("Asia/Karachi").format("DD/MM/YYYY, hh:mm:ss a");
