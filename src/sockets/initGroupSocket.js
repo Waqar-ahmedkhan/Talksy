@@ -229,7 +229,6 @@ export const initGroupSocket = (server) => {
               "Invalid music URL format. Must end with .mp3, .wav, or .ogg",
           });
         }
-
         if (pictureUrl && !pictureUrlPattern.test(pictureUrl)) {
           console.error(
             `[CREATE_GROUP_ERROR] Invalid pictureUrl: ${pictureUrl}, timestamp=${timestamp}`
@@ -240,8 +239,6 @@ export const initGroupSocket = (server) => {
               "Invalid picture URL format. Must end with .jpg, .jpeg, .png, .gif, or .webp",
           });
         }
-
-        // Validate members array
         if (!Array.isArray(members)) {
           console.error(
             `[CREATE_GROUP_ERROR] Members must be an array, timestamp=${timestamp}`
