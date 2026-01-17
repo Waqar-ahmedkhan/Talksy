@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Talksy Video Call Lab</title>
+    <link rel="stylesheet" href="/video-call.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <main class="shell">
+      <header class="brand">
+        <div class="brand-mark">Talksy</div>
+        <div class="brand-sub">Video Call Lab</div>
+      </header>
+
+      <section id="loginScreen" class="panel is-active">
+        <h1>Connect a test identity</h1>
+        <p class="subtle">
+          Use a real user id or phone that exists in your database.
+        </p>
+        <div class="button-row">
+          <button id="quickUserA" class="ghost">Use test-user-1</button>
+          <button id="quickUserB" class="ghost">Use test-user-2</button>
+        </div>
+        <label class="field">
+          <span>Your user id or phone</span>
+          <input id="userIdInput" type="text" placeholder="e.g. 65d... or +923001234567" />
+        </label>
+        <button id="loginBtn" class="primary">Join Video Socket</button>
+
+        <div class="divider"></div>
+
+        <div class="card">
+          <h2>Media Check</h2>
+          <p class="subtle">Verify camera + mic without logging in.</p>
+          <label class="field">
+            <span>Camera</span>
+            <select id="cameraSelect"></select>
+          </label>
+          <label class="field">
+            <span>Microphone</span>
+            <select id="micSelect"></select>
+          </label>
+          <div class="button-row">
+            <button id="startPreviewBtn" class="primary">Start Preview</button>
+            <button id="stopPreviewBtn" class="ghost" disabled>Stop Preview</button>
+          </div>
+          <div class="button-row">
+            <button id="toggleMicBtn" class="ghost" disabled>Mute Mic</button>
+            <button id="toggleCamBtn" class="ghost" disabled>Disable Cam</button>
+          </div>
+          <div class="preview">
+            <video id="previewVideo" autoplay muted playsinline></video>
+            <div id="previewStatus" class="call-status">No local media</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="lobbyScreen" class="panel">
+        <div class="status-row">
+          <div>
+            <div class="label">Status</div>
+            <div id="statusText" class="status-text">Offline</div>
+          </div>
+          <button id="refreshBtn" class="ghost">Refresh Online</button>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <h2>Online Users</h2>
+            <p class="subtle">Tap a user to prefill the callee input.</p>
+            <ul id="onlineList" class="list"></ul>
+          </div>
+          <div class="card">
+            <h2>Start a Call</h2>
+            <label class="field">
+              <span>Peer id or phone</span>
+              <input id="calleeIdInput" type="text" placeholder="Select or type a user id" />
+            </label>
+            <div class="button-row">
+              <button id="startCallBtn" class="primary">Start Video Call</button>
+              <button id="endCallBtn" class="danger" disabled>Hang Up</button>
+            </div>
+            <div class="button-row">
+              <button id="directTestCallBtn" class="ghost">Direct Test Call (1 ⇄ 2)</button>
+            </div>
+            <div id="callStatus" class="call-status">Idle</div>
+          </div>
+        </div>
+
+        <div id="incomingCallBox" class="incoming">
+          <div class="incoming-details">
+            <div class="label">Incoming</div>
+            <div id="incomingCaller" class="incoming-name">Unknown</div>
+          </div>
+          <div class="button-row">
+            <button id="acceptCallBtn" class="primary">Accept</button>
+            <button id="rejectCallBtn" class="danger">Reject</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="callScreen" class="panel">
+        <div class="video-grid">
+          <div class="video-card">
+            <video id="localVideo" autoplay muted playsinline></video>
+            <div class="video-label">You</div>
+          </div>
+          <div class="video-card">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <div id="remoteLabel" class="video-label">Remote</div>
+          </div>
+        </div>
+        <div class="card diagnostics">
+          <h2>Connection Diagnostics</h2>
+          <div class="diag-grid">
+            <div>
+              <div class="label">Signaling</div>
+              <div id="diagSignaling">-</div>
+            </div>
+            <div>
+              <div class="label">ICE</div>
+              <div id="diagIce">-</div>
+            </div>
+            <div>
+              <div class="label">Connection</div>
+              <div id="diagConnection">-</div>
+            </div>
+            <div>
+              <div class="label">Gathering</div>
+              <div id="diagGathering">-</div>
+            </div>
+            <div>
+              <div class="label">ICE Candidates</div>
+              <div id="diagCandidates">0</div>
+            </div>
+            <div>
+              <div class="label">Remote Tracks</div>
+              <div id="diagRemoteTracks">0</div>
+            </div>
+          </div>
+        </div>
+        <button id="endCallBtnCall" class="danger wide">End Call</button>
+      </section>
+    </main>
+
+    <script src="/video-socket/socket.io.js"></script>
+    <script src="/video-call.js"></script>
+  </body>
+</html>

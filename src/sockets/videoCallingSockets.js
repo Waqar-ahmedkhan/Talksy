@@ -27,6 +27,11 @@ export const initVideoSocket = (server) => {
     path: "/video-socket",
   });
 
+  const testModeValue = (process.env.VIDEO_TEST_MODE || "").toLowerCase().trim();
+  const testMode = testModeValue === "true" || testModeValue === "1" || testModeValue === "yes";
+  const testIdsEnv = process.env.VIDEO_TEST_IDS || "test-user-1,test-user-2";
+  const testIds = testIdsEnv.split(",").map((id) => id.trim()).filter(Boolean);
+
   // Core data structures
   const onlineUsers = new Map(); // userId (MongoDB ID) -> socketId
   const busyUsers = new Set();   // userIds currently in any call
@@ -41,6 +46,10 @@ export const initVideoSocket = (server) => {
     if (!identifier) return null;
 
     const idStr = identifier.toString().trim();
+
+    if (testMode && testIds.includes(idStr)) {
+      return idStr;
+    }
 
     // Already a valid MongoDB ObjectID - validate existence
     if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
@@ -189,11 +198,13 @@ export const initVideoSocket = (server) => {
       }
 
       // Update database
-      try {
-        await User.findByIdAndUpdate(userId, { online: false, lastSeen: new Date() });
-        console.log(`[VIDEO_CLEANUP_DB] User ${userId} marked offline in DB at ${getPKTTimestamp()}`);
-      } catch (dbErr) {
-        console.error(`[VIDEO_CLEANUP_DB_ERROR] Failed to update user ${userId}: ${dbErr.message} at ${getPKTTimestamp()}`);
+      if (!testMode && !testIds.includes(userId)) {
+        try {
+          await User.findByIdAndUpdate(userId, { online: false, lastSeen: new Date() });
+          console.log(`[VIDEO_CLEANUP_DB] User ${userId} marked offline in DB at ${getPKTTimestamp()}`);
+        } catch (dbErr) {
+          console.error(`[VIDEO_CLEANUP_DB_ERROR] Failed to update user ${userId}: ${dbErr.message} at ${getPKTTimestamp()}`);
+        }
       }
 
       console.log(`[VIDEO_CLEANUP_COMPLETE] Cleanup finished for user ${userId} at ${getPKTTimestamp()}`);
@@ -251,11 +262,13 @@ export const initVideoSocket = (server) => {
       onlineUsers.set(resolvedUserId, socket.id);
       socket.userId = resolvedUserId;
 
-      try {
-        await User.findByIdAndUpdate(resolvedUserId, { online: true, lastSeen: new Date() });
-        console.log(`[VIDEO_JOIN_SUCCESS] User ${resolvedUserId} marked online (socket: ${socket.id}) at ${getPKTTimestamp()}`);
-      } catch (dbErr) {
-        console.error(`[VIDEO_JOIN_DB_ERROR] Failed to update user ${resolvedUserId}: ${dbErr.message} at ${getPKTTimestamp()}`);
+      if (!testMode && !testIds.includes(resolvedUserId)) {
+        try {
+          await User.findByIdAndUpdate(resolvedUserId, { online: true, lastSeen: new Date() });
+          console.log(`[VIDEO_JOIN_SUCCESS] User ${resolvedUserId} marked online (socket: ${socket.id}) at ${getPKTTimestamp()}`);
+        } catch (dbErr) {
+          console.error(`[VIDEO_JOIN_DB_ERROR] Failed to update user ${resolvedUserId}: ${dbErr.message} at ${getPKTTimestamp()}`);
+        }
       }
 
       broadcastOnlineUsers();
@@ -301,15 +314,17 @@ export const initVideoSocket = (server) => {
         }
 
         // Check blocks
-        const blocked = await Block.findOne({
-          $or: [
-            { blockerId: resolvedCallee, blockedId: resolvedCaller },
-            { blockerId: resolvedCaller, blockedId: resolvedCallee },
-          ],
-        });
-        if (blocked) {
-          console.log(`[VIDEO_CALL_ERROR] Call blocked between ${resolvedCaller} and ${resolvedCallee} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "User is blocked" });
+        if (!testMode && !testIds.includes(resolvedCaller) && !testIds.includes(resolvedCallee)) {
+          const blocked = await Block.findOne({
+            $or: [
+              { blockerId: resolvedCallee, blockedId: resolvedCaller },
+              { blockerId: resolvedCaller, blockedId: resolvedCallee },
+            ],
+          });
+          if (blocked) {
+            console.log(`[VIDEO_CALL_ERROR] Call blocked between ${resolvedCaller} and ${resolvedCallee} at ${getPKTTimestamp()}`);
+            return socket.emit("call_error", { error: "User is blocked" });
+          }
         }
 
         // Check if callee is busy
@@ -412,7 +427,9 @@ export const initVideoSocket = (server) => {
           // Send call_accepted with answer AFTER room is ready
           io.to(callerSocket).emit("call_accepted", {
             answer,
+            callerId: resolvedCaller,
             callerUserId: resolvedCaller,
+            calleeId: resolvedCallee,
             calleeUserId: resolvedCallee,
             callType: pending.callType
           });
