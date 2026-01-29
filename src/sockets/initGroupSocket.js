@@ -613,7 +613,7 @@ export const initGroupSocket = (server) => {
             }
           }
         }
-        // Case 2: User is trying to remove someone else → must be creator or admin
+        // Case 2: User is trying to remove someone else ? must be creator or admin
         else {
           const isCreator = group.createdBy.toString() === userId;
           const isAdmin = group.admins?.map((id) => id.toString()).includes(userId);
@@ -632,7 +632,7 @@ export const initGroupSocket = (server) => {
             });
           }
 
-          // Admins cannot remove other admins (optional — you can allow this if needed)
+          // Admins cannot remove other admins (optional � you can allow this if needed)
           if (isAdmin && !isCreator) {
             const targetIsAdmin = group.admins?.map((id) => id.toString()).includes(memberId);
             if (targetIsAdmin) {
@@ -838,7 +838,7 @@ export const initGroupSocket = (server) => {
         const messagePayload = {
           _id: chat._id.toString(),
           id: chat._id.toString(),
-          senderId: senderId.toString(), // 👈 EXPLICIT STRING CONVERSION
+          senderId: senderId.toString(), // ?? EXPLICIT STRING CONVERSION
           senderDisplayName: senderDisplayName,
           groupId: castGroupId.toString(),
           type: 'text',
@@ -931,7 +931,7 @@ export const initGroupSocket = (server) => {
           !fileType?.startsWith('audio/')
         ) {
           console.error(
-            `❌ [SEND_VOICE_MESSAGE_ERROR] Invalid data: senderId=${senderId}, groupId=${groupId}, content=${content}, duration=${duration}, fileType=${fileType}, socketId=${socket.id}, timestamp=${timestamp}`,
+            `? [SEND_VOICE_MESSAGE_ERROR] Invalid data: senderId=${senderId}, groupId=${groupId}, content=${content}, duration=${duration}, fileType=${fileType}, socketId=${socket.id}, timestamp=${timestamp}`,
           );
           socket.emit('voice_error', {
             error: 'Invalid voice data, duration (max 3 minutes), or fileType (must be audio/*)',
@@ -950,14 +950,14 @@ export const initGroupSocket = (server) => {
         // Step 2: Verify group and membership
         const group = await Group.findById(castGroupId);
         if (!group) {
-          console.error(`❌ [SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`);
+          console.error(`? [SEND_VOICE_MESSAGE_ERROR] Group not found: groupId=${castGroupId}, timestamp=${timestamp}`);
           socket.emit('voice_error', { error: 'Group not found' });
           if (callback) callback({ success: false, message: 'Group not found' });
           return;
         }
         const isMember = group.members.some((id) => id.equals(castSenderId));
         if (!isMember) {
-          console.error(`❌ [SEND_VOICE_MESSAGE_ERROR] Not authorized: senderId=${castSenderId}, groupId=${castGroupId}, timestamp=${timestamp}`);
+          console.error(`? [SEND_VOICE_MESSAGE_ERROR] Not authorized: senderId=${castSenderId}, groupId=${castGroupId}, timestamp=${timestamp}`);
           socket.emit('voice_error', {
             error: 'Not authorized to send message',
           });
@@ -980,7 +980,7 @@ export const initGroupSocket = (server) => {
           )}, timestamp=${timestamp}`,
         );
         if (!user) {
-          console.error(`❌ [SEND_VOICE_MESSAGE_ERROR] User not found in database: senderId=${castSenderId}, timestamp=${timestamp}`);
+          console.error(`? [SEND_VOICE_MESSAGE_ERROR] User not found in database: senderId=${castSenderId}, timestamp=${timestamp}`);
           socket.emit('voice_error', {
             error: 'User not found - please verify your account.',
           });
@@ -1061,7 +1061,7 @@ export const initGroupSocket = (server) => {
         console.log(`[SEND_VOICE_MESSAGE_SUCCESS] Voice message sent: messageId=${chat._id}, groupId=${castGroupId}, timestamp=${timestamp}`);
       } catch (error) {
         console.error(
-          `❌ [SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}, stack=${error.stack}, timestamp=${timestamp}`,
+          `? [SEND_VOICE_MESSAGE_ERROR] Failed: userId=${socket.userId}, error=${error.message}, stack=${error.stack}, timestamp=${timestamp}`,
         );
         socket.emit('voice_error', { error: 'Failed to send voice message' });
         if (callback)
@@ -1234,7 +1234,7 @@ export const initGroupSocket = (server) => {
           return {
             ...msgObj,
             id: msgObj._id.toString(),
-            senderId: validSenderId, // 👈 ENSURE NOT EMPTY
+            senderId: validSenderId, // ?? ENSURE NOT EMPTY
             senderDisplayName: finalDisplayName,
             groupId: msgObj.groupId?.toString?.() || msgObj.groupId,
           };
@@ -1393,7 +1393,7 @@ export const initGroupSocket = (server) => {
           console.error(
             `[SEND_MEDIA_ERROR] Invalid senderId: "${senderIdStr}" (type: ${typeof senderIdStr}), ` + `socketId=${socket.id}, timestamp=${timestamp}`,
           );
-          return ack('Invalid sender – please join groups first');
+          return ack('Invalid sender � please join groups first');
         }
         const senderId = new mongoose.Types.ObjectId(senderIdStr);
         console.log(`[SEND_MEDIA] Casted senderId: ${senderId.toString()}, timestamp=${timestamp}`);
@@ -1401,7 +1401,7 @@ export const initGroupSocket = (server) => {
         // Step 2: Validate groupId
         if (!groupId) {
           console.error(`[SEND_MEDIA_ERROR] MISSING groupId in payload! Full payload: ${JSON.stringify(payload)}, ` + `timestamp=${timestamp}`);
-          return ack("No group ID provided – select a group and include { groupId: '...' } in emit");
+          return ack("No group ID provided � select a group and include { groupId: '...' } in emit");
         }
         if (!isValidObjectId(groupId)) {
           console.error(`[SEND_MEDIA_ERROR] Invalid groupId: "${groupId}", timestamp=${timestamp}`);
