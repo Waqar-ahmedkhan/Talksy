@@ -833,10 +833,24 @@ export const initGroupSocket = (server) => {
         console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 9: Emitting message to group room, timestamp=${timestamp}`);
         // FIX: Use getGroupRoom helper
         const groupRoom = getGroupRoom(castGroupId);
-        const formattedChat = formatChatForEmission(chat);
-        io.to(groupRoom).emit('new_text_message', { message: formattedChat });
+
+        // EXPLICIT PAYLOAD CONSTRUCTION (Crucial for Flutter - ensure senderId is NOT empty)
+        const messagePayload = {
+          _id: chat._id.toString(),
+          id: chat._id.toString(),
+          senderId: senderId.toString(), // 👈 EXPLICIT STRING CONVERSION
+          senderDisplayName: senderDisplayName,
+          groupId: castGroupId.toString(),
+          type: 'text',
+          content: chat.content,
+          status: 'sent',
+          createdAt: chat.createdAt.toISOString(),
+          deletedFor: [],
+        };
+
+        io.to(groupRoom).emit('new_text_message', { message: messagePayload });
         console.log(
-          `[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}, senderId=${formattedChat.senderId}, timestamp=${timestamp}`,
+          `[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}, senderId=${messagePayload.senderId}, timestamp=${timestamp}`,
         );
 
         // Step 10: Update message status to delivered
@@ -873,7 +887,7 @@ export const initGroupSocket = (server) => {
 
         // Step 11: Send success response
         console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 11: Sending success response, timestamp=${timestamp}`);
-        callback({ success: true, message: chat });
+        callback({ success: true, message: messagePayload });
         console.log(
           `[SEND_TEXT_MESSAGE_SUCCESS] Message sent: messageId=${chat._id}, groupId=${castGroupId}, senderId=${senderId}, timestamp=${timestamp}`,
         );
@@ -1181,7 +1195,8 @@ export const initGroupSocket = (server) => {
         }
 
         const skip = (page - 1) * limit;
-        const messages = await Chat.find({ groupId }).populate('senderId', 'displayName').sort({ createdAt: -1 }).skip(skip).limit(limit);
+        // Fetch messages with populated senderId
+        const messages = await Chat.find({ groupId }).populate('senderId', 'displayName phone').sort({ createdAt: -1 }).skip(skip).limit(limit);
         console.log(`[GET_GROUP_MESSAGES] Fetched ${messages.length} messages for groupId=${groupId}, page=${page}`);
 
         const unreadMessages = messages.filter((msg) => {
@@ -1197,7 +1212,33 @@ export const initGroupSocket = (server) => {
           console.log(`[GET_GROUP_MESSAGES] Marked ${unreadMessages.length} messages as delivered for groupId=${groupId}`);
         }
 
-        const messagesPayload = messages.reverse().map((msg) => formatChatForEmission(msg));
+        // FIX: Better handling of populated vs non-populated senderId
+        const messagesPayload = messages.reverse().map((msg) => {
+          const msgObj = msg.toObject();
+
+          // Handle SenderID Retrieval (populated or raw)
+          let validSenderId = '';
+          let validDisplayName = 'Unknown';
+
+          if (msgObj.senderId && typeof msgObj.senderId === 'object') {
+            // Populated User Object
+            validSenderId = msgObj.senderId._id ? msgObj.senderId._id.toString() : '';
+            validDisplayName = msgObj.senderId.displayName || 'Unknown';
+          } else if (msgObj.senderId) {
+            // Raw ID String or ObjectId
+            validSenderId = msgObj.senderId.toString();
+          }
+
+          const finalDisplayName = msgObj.senderDisplayName || validDisplayName;
+
+          return {
+            ...msgObj,
+            id: msgObj._id.toString(),
+            senderId: validSenderId, // 👈 ENSURE NOT EMPTY
+            senderDisplayName: finalDisplayName,
+            groupId: msgObj.groupId?.toString?.() || msgObj.groupId,
+          };
+        });
 
         callback({
           success: true,
