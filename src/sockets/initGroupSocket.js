@@ -5,13 +5,13 @@ import Chat from '../models/Chat.js';
 import User from '../models/User.js';
 import moment from 'moment-timezone';
 import Profile from '../models/Profile.js';
-import { getGroupRoom as getGroupRoomUtil } from '../utils/getGroupRoom.js';
 import { isValidObjectId } from 'mongoose';
 import mongoose from 'mongoose';
 
-export const getGroupRoom = typeof getGroupRoomUtil === 'function' ? getGroupRoomUtil : (groupId) => `group_${groupId}`;
+// Helper function to generate group room names
+const getGroupRoom = (groupId) => `group_${groupId}`;
 
-// Keep a global fallback for any legacy calls.
+// Expose globally to prevent ReferenceError from other contexts
 global.getGroupRoom = getGroupRoom;
 
 const logTimestamp = () => moment().tz('Asia/Karachi').format('DD/MM/YYYY, hh:mm:ss a');
@@ -58,6 +58,8 @@ export const formatProfile = (profile, user, customName = null, isBlocked = fals
   );
   return formatted;
 };
+
+export { getGroupRoom };
 
 export const initGroupSocket = (server) => {
   const io = new Server(server, {
@@ -1171,9 +1173,24 @@ export const initGroupSocket = (server) => {
           console.log(`[GET_GROUP_MESSAGES] Marked ${unreadMessages.length} messages as delivered for groupId=${groupId}`);
         }
 
+        const messagesPayload = messages.reverse().map((msg) => {
+          const obj = msg.toObject ? msg.toObject() : msg;
+          const senderId = obj.senderId?._id
+            ? obj.senderId._id.toString()
+            : obj.senderId?.toString?.() ?? obj.senderId;
+          return {
+            ...obj,
+            id: obj._id?.toString?.() ?? obj._id,
+            groupId: obj.groupId?.toString?.() ?? obj.groupId,
+            senderId,
+            senderDisplayName:
+              obj.senderDisplayName || obj.senderId?.displayName,
+          };
+        });
+
         callback({
           success: true,
-          messages: messages.reverse(),
+          messages: messagesPayload,
           hasMore: messages.length === limit,
         });
         console.log(`[GET_GROUP_MESSAGES_SUCCESS] Messages fetched: groupId=${groupId}, page=${page}`);
