@@ -59,6 +59,27 @@ export const formatProfile = (profile, user, customName = null, isBlocked = fals
   return formatted;
 };
 
+const formatChatForEmission = (chat) => {
+  if (!chat) return null;
+  return {
+    id: chat._id?.toString() || null,
+    messageId: chat._id?.toString() || null, // Alternate field name for compatibility
+    senderId: chat.senderId?.toString() || null,
+    senderDisplayName: chat.senderDisplayName || '',
+    groupId: chat.groupId?.toString() || null,
+    type: chat.type || 'text',
+    content: chat.content || '',
+    displayContent: chat.type === 'text' && chat.content?.length > 50 ? `${chat.content.slice(0, 50)}...` : chat.content || '',
+    fileType: chat.fileType || null,
+    fileName: chat.fileName || '',
+    duration: chat.duration || 0,
+    status: chat.status || 'sent',
+    createdAt: chat.createdAt?.toISOString() || new Date().toISOString(),
+    pinned: chat.pinned || false,
+    deletedFor: Array.isArray(chat.deletedFor) ? chat.deletedFor.map((id) => id?.toString?.() || id) : [],
+  };
+};
+
 export { getGroupRoom };
 
 export const initGroupSocket = (server) => {
@@ -812,8 +833,11 @@ export const initGroupSocket = (server) => {
         console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 9: Emitting message to group room, timestamp=${timestamp}`);
         // FIX: Use getGroupRoom helper
         const groupRoom = getGroupRoom(castGroupId);
-        io.to(groupRoom).emit('new_text_message', { message: chat });
-        console.log(`[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}, timestamp=${timestamp}`);
+        const formattedChat = formatChatForEmission(chat);
+        io.to(groupRoom).emit('new_text_message', { message: formattedChat });
+        console.log(
+          `[SEND_TEXT_MESSAGE_DEBUG] Emitted new_text_message to groupRoom=${groupRoom}, senderId=${formattedChat.senderId}, timestamp=${timestamp}`,
+        );
 
         // Step 10: Update message status to delivered
         console.log(`[SEND_TEXT_MESSAGE_DEBUG] Step 10: Scheduling status update to delivered, timestamp=${timestamp}`);
@@ -1173,20 +1197,7 @@ export const initGroupSocket = (server) => {
           console.log(`[GET_GROUP_MESSAGES] Marked ${unreadMessages.length} messages as delivered for groupId=${groupId}`);
         }
 
-        const messagesPayload = messages.reverse().map((msg) => {
-          const obj = msg.toObject ? msg.toObject() : msg;
-          const senderId = obj.senderId?._id
-            ? obj.senderId._id.toString()
-            : obj.senderId?.toString?.() ?? obj.senderId;
-          return {
-            ...obj,
-            id: obj._id?.toString?.() ?? obj._id,
-            groupId: obj.groupId?.toString?.() ?? obj.groupId,
-            senderId,
-            senderDisplayName:
-              obj.senderDisplayName || obj.senderId?.displayName,
-          };
-        });
+        const messagesPayload = messages.reverse().map((msg) => formatChatForEmission(msg));
 
         callback({
           success: true,
@@ -1249,8 +1260,9 @@ export const initGroupSocket = (server) => {
 
         // FIX: Use getGroupRoom helper
         const groupRoom = getGroupRoom(message.groupId);
-        io.to(groupRoom).emit('message_deleted', { message });
-        console.log(`[DELETE_MESSAGE] Emitted message_deleted to groupId=${message.groupId}`);
+        const formattedMessage = formatChatForEmission(message);
+        io.to(groupRoom).emit('message_deleted', { message: formattedMessage });
+        console.log(`[DELETE_MESSAGE] Emitted message_deleted to groupId=${message.groupId}, senderId=${formattedMessage.senderId}`);
 
         callback({ success: true, message });
         console.log(`[DELETE_MESSAGE_SUCCESS] Message deleted: messageId=${messageId}`);
