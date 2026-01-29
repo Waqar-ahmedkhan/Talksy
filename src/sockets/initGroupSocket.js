@@ -8,12 +8,6 @@ import Profile from '../models/Profile.js';
 import { isValidObjectId } from 'mongoose';
 import mongoose from 'mongoose';
 
-// Helper function to generate group room names
-const getGroupRoom = (groupId) => `group_${groupId}`;
-
-// Expose globally to prevent ReferenceError from other contexts
-global.getGroupRoom = getGroupRoom;
-
 const logTimestamp = () => moment().tz('Asia/Karachi').format('DD/MM/YYYY, hh:mm:ss a');
 
 export const normalizePhoneNumber = (phone) => {
@@ -81,9 +75,10 @@ const formatChatForEmission = (chat) => {
   };
 };
 
-export { getGroupRoom };
-
 export const initGroupSocket = (server) => {
+  // 1️⃣ HELPER FUNCTION (Inside the main function - foolproof)
+  const getGroupRoom = (groupId) => `group_${groupId}`;
+
   const io = new Server(server, {
     cors: { origin: '*' },
     path: '/group-socket',
