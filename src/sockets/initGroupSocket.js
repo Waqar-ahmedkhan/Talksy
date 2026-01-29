@@ -73,6 +73,7 @@ const formatChatForEmission = (chat) => {
     fileType: chat.fileType || null,
     fileName: chat.fileName || '',
     duration: chat.duration || 0,
+    clientId: chat.clientId || null,
     status: chat.status || 'sent',
     createdAt: chat.createdAt?.toISOString() || new Date().toISOString(),
     pinned: chat.pinned || false,
@@ -683,7 +684,7 @@ export const initGroupSocket = (server) => {
       );
 
       try {
-        const { groupId, content } = data;
+        const { groupId, content, clientId } = data;
         const senderIdStr = socket.userId;
 
         // Step 1: Validate socket.userId
@@ -817,6 +818,7 @@ export const initGroupSocket = (server) => {
           type: 'text',
           content: content.trim(),
           status: 'sent',
+          clientId,
           deletedFor: [],
         });
 
@@ -844,6 +846,7 @@ export const initGroupSocket = (server) => {
           type: 'text',
           content: chat.content,
           status: 'sent',
+          clientId,
           createdAt: chat.createdAt.toISOString(),
           deletedFor: [],
         };
@@ -905,11 +908,11 @@ export const initGroupSocket = (server) => {
       }
     });
 
-    socket.on('send_voice_message', async ({ senderId, groupId, content, duration, fileType, fileName }, callback) => {
+    socket.on('send_voice_message', async ({ senderId, groupId, content, duration, fileType, fileName, clientId }, callback) => {
       const timestamp = moment().tz('Asia/Karachi').format('DD/MM/YYYY, hh:mm:ss a');
       console.log(
         `[SEND_VOICE_MESSAGE] Attempting to send voice message: userId=${socket.userId}, data=${JSON.stringify(
-          { senderId, groupId, content, duration, fileType, fileName },
+          { senderId, groupId, content, duration, fileType, fileName, clientId },
           null,
           2,
         )}, timestamp=${timestamp}`,
@@ -1004,6 +1007,7 @@ export const initGroupSocket = (server) => {
           fileName: fileName || undefined,
           duration,
           status: 'sent',
+          clientId,
           deletedFor: [],
         });
         await chat.save();
@@ -1019,6 +1023,7 @@ export const initGroupSocket = (server) => {
           fileType: chat.fileType,
           fileName: chat.fileName || '',
           duration: chat.duration || 0,
+          clientId,
           timestamp: chat.createdAt.toISOString(),
           status: chat.status,
           displayName: chat.senderDisplayName, // Keep for backward compatibility
@@ -1417,7 +1422,7 @@ export const initGroupSocket = (server) => {
         }
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
-          const { type, url, fileType, duration = 0, fileName } = file;
+          const { type, url, fileType, duration = 0, fileName, clientId } = file;
           if (!['image', 'video', 'file'].includes(type)) {
             console.error(`[SEND_MEDIA_ERROR] Invalid type at index ${i}: ${type}, timestamp=${timestamp}`);
             return ack(`Invalid file type at index ${i}: ${type}`);
@@ -1481,7 +1486,7 @@ export const initGroupSocket = (server) => {
         // Step 6: Create and save chat documents
         const chats = [];
         for (const file of files) {
-          const { type, url, fileType, duration = 0, fileName } = file;
+          const { type, url, fileType, duration = 0, fileName, clientId } = file;
           const chat = new Chat({
             senderId,
             senderDisplayName, // Store displayName directly (like send_text_message)
@@ -1492,6 +1497,7 @@ export const initGroupSocket = (server) => {
             fileName: type === 'file' ? fileName : undefined,
             duration: type === 'video' ? duration : 0,
             status: 'sent',
+            clientId,
             deletedFor: [],
           });
           await chat.save();
@@ -1510,6 +1516,7 @@ export const initGroupSocket = (server) => {
           fileType: chat.fileType,
           fileName: chat.fileName,
           duration: chat.duration,
+          clientId: chat.clientId,
           timestamp: chat.createdAt.toISOString(),
           status: chat.status,
           displayName: chat.senderDisplayName, // Keep for backward compatibility
