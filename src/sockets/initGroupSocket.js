@@ -7,6 +7,7 @@ import moment from 'moment-timezone';
 import Profile from '../models/Profile.js';
 import { isValidObjectId } from 'mongoose';
 import mongoose from 'mongoose';
+import { getGroupRoom } from '../utils/getGroupRoom.js';
 
 const logTimestamp = () => moment().tz('Asia/Karachi').format('DD/MM/YYYY, hh:mm:ss a');
 
@@ -77,7 +78,6 @@ const formatChatForEmission = (chat) => {
 
 export const initGroupSocket = (server) => {
   // 1️⃣ HELPER FUNCTION (Inside the main function - foolproof)
-  const getGroupRoom = (groupId) => `group_${groupId}`;
 
   const io = new Server(server, {
     cors: { origin: '*' },
@@ -1231,10 +1231,12 @@ export const initGroupSocket = (server) => {
 
           return {
             ...msgObj,
-            id: msgObj._id.toString(),
-            senderId: validSenderId, // ?? ENSURE NOT EMPTY
+            _id: msgObj._id.toString(), // Ensure _id is string
+            id: msgObj._id.toString(), // Ensure id is string
+            senderId: validSenderId, // Ensure senderId is string
             senderDisplayName: finalDisplayName,
             groupId: msgObj.groupId?.toString?.() || msgObj.groupId,
+            timestamp: msgObj.createdAt ? new Date(msgObj.createdAt).toISOString() : new Date().toISOString(),
           };
         });
 
