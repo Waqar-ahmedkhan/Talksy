@@ -477,13 +477,19 @@ export const initVideoSocket = (server) => {
     socket.on('ice_candidate', async ({ candidate, toUserId }) => {
       console.log(`[VIDEO_ICE] ICE candidate received for ${toUserId} from socket ${socket.id} (user: ${socket.userId}) at ${getPKTTimestamp()}`);
 
-      if (!candidate || !candidate.candidate) {
-        console.log(`[VIDEO_ICE_ERROR] Invalid ICE candidate structure at ${getPKTTimestamp()}`);
-        return socket.emit('call_error', { error: 'Invalid ICE candidate' });
-      }
-
       if (!toUserId || toUserId === 'undefined' || toUserId === 'null' || toUserId === null) {
         console.warn(`[VIDEO_ICE_DROP] No target user ID provided, dropping candidate at ${getPKTTimestamp()}`);
+        return;
+      }
+
+      // OPTIMIZATION: Fast path if toUserId is already a known active socket ID
+      if (onlineUsers.has(toUserId)) {
+        const targetSocket = onlineUsers.get(toUserId);
+        io.to(targetSocket).emit('ice_candidate', {
+          candidate,
+          fromUserId: socket.userId,
+        });
+        // console.log(`[VIDEO_ICE_SENT_FAST] Relayed to ${toUserId}`); // Optional: reduced logging for speed
         return;
       }
 
