@@ -1,414 +1,431 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🎥 Video Call Test</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: Arial, sans-serif;
-      background: #1a1a2e;
-      color: white;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    .container {
-      background: #16213e;
-      border-radius: 15px;
-      padding: 30px;
-      width: 90%;
-      max-width: 500px;
-      text-align: center;
-    }
-    input, button {
-      width: 100%;
-      padding: 15px;
-      margin: 10px 0;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-    input {
-      background: #0f3460;
-      color: white;
-      border: 1px solid #4cc9f0;
-    }
-    button {
-      background: #4cc9f0;
-      color: #1a1a2e;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    button.reject { background: #f72585; }
-    button.disabled { background: #666; cursor: not-allowed; }
-    .screen { display: none; }
-    .screen.active { display: block; }
-    .video-container {
-      position: relative;
-      width: 100%;
-      height: 200px;
-      background: black;
-      border-radius: 10px;
-      margin: 10px 0;
-      overflow: hidden;
-    }
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .label {
-      position: absolute;
-      bottom: 5px;
-      left: 5px;
-      background: rgba(0,0,0,0.7);
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-    }
-    .incoming-call {
-      background: #0f3460;
-      padding: 20px;
-      border-radius: 10px;
-      margin: 20px 0;
-    }
-    #onlineList {
-      list-style: none;
-      margin: 10px 0;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    #onlineList li {
-      background: #0f3460;
-      padding: 10px;
-      margin: 5px 0;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    #onlineList li:hover {
-      background: #1b4060;
-    }
-    #onlineList li.disabled {
-      background: #333;
-      cursor: not-allowed;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <!-- Login Screen -->
-    <div id="loginScreen" class="screen active">
-      <h1>🎥 Video Call</h1>
-      <input type="text" id="userIdInput" placeholder="Your User ID (e.g., user1)" />
-      <button id="loginBtn">Login</button>
-    </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🎥 Video Call Test</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background: #1a1a2e;
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .container {
+        background: #16213e;
+        border-radius: 15px;
+        padding: 30px;
+        width: 90%;
+        max-width: 500px;
+        text-align: center;
+      }
+      input,
+      button {
+        width: 100%;
+        padding: 15px;
+        margin: 10px 0;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+      }
+      input {
+        background: #0f3460;
+        color: white;
+        border: 1px solid #4cc9f0;
+      }
+      button {
+        background: #4cc9f0;
+        color: #1a1a2e;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      button.reject {
+        background: #f72585;
+      }
+      button.disabled {
+        background: #666;
+        cursor: not-allowed;
+      }
+      .screen {
+        display: none;
+      }
+      .screen.active {
+        display: block;
+      }
+      .video-container {
+        position: relative;
+        width: 100%;
+        height: 200px;
+        background: black;
+        border-radius: 10px;
+        margin: 10px 0;
+        overflow: hidden;
+      }
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .label {
+        position: absolute;
+        bottom: 5px;
+        left: 5px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .incoming-call {
+        background: #0f3460;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 20px 0;
+      }
+      #onlineList {
+        list-style: none;
+        margin: 10px 0;
+        max-height: 150px;
+        overflow-y: auto;
+      }
+      #onlineList li {
+        background: #0f3460;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      #onlineList li:hover {
+        background: #1b4060;
+      }
+      #onlineList li.disabled {
+        background: #333;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Login Screen -->
+      <div id="loginScreen" class="screen active">
+        <h1>🎥 Video Call</h1>
+        <input type="text" id="userIdInput" placeholder="Your User ID (e.g., user1)" />
+        <button id="loginBtn">Login</button>
+      </div>
 
-    <!-- Dashboard -->
-    <div id="dashboardScreen" class="screen">
-      <h2>📱 Dashboard</h2>
-      <p id="status">🟢 Online</p>
-      <h3>Online Users:</h3>
-      <ul id="onlineList"></ul>
-      <input type="text" id="calleeIdInput" placeholder="Select or enter user ID to call" />
-      <button id="startCallBtn">📞 Call</button>
-      
-      <div id="incomingCallBox" class="incoming-call" style="display: none;">
-        <h3 id="callerName">Incoming Call...</h3>
-        <button id="acceptCallBtn">✅ Accept</button>
-        <button id="rejectCallBtn" class="reject">❌ Reject</button>
+      <!-- Dashboard -->
+      <div id="dashboardScreen" class="screen">
+        <h2>📱 Dashboard</h2>
+        <p id="status">🟢 Online</p>
+        <h3>Online Users:</h3>
+        <ul id="onlineList"></ul>
+        <input type="text" id="calleeIdInput" placeholder="Select or enter user ID to call" />
+        <button id="startCallBtn">📞 Call</button>
+
+        <div id="incomingCallBox" class="incoming-call" style="display: none">
+          <h3 id="callerName">Incoming Call...</h3>
+          <button id="acceptCallBtn">✅ Accept</button>
+          <button id="rejectCallBtn" class="reject">❌ Reject</button>
+        </div>
+      </div>
+
+      <!-- Call Screen -->
+      <div id="callScreen" class="screen">
+        <div class="video-container">
+          <video id="localVideo" autoplay muted></video>
+          <div class="label">You</div>
+        </div>
+        <div class="video-container">
+          <video id="remoteVideo" autoplay></video>
+          <div class="label" id="remoteLabel">Remote</div>
+        </div>
+        <button id="endCallBtn" class="reject">⏹️ End Call</button>
       </div>
     </div>
 
-    <!-- Call Screen -->
-    <div id="callScreen" class="screen">
-      <div class="video-container">
-        <video id="localVideo" autoplay muted></video>
-        <div class="label">You</div>
-      </div>
-      <div class="video-container">
-        <video id="remoteVideo" autoplay></video>
-        <div class="label" id="remoteLabel">Remote</div>
-      </div>
-      <button id="endCallBtn" class="reject">⏹️ End Call</button>
-    </div>
-  </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const loginScreen = document.getElementById('loginScreen');
+      const dashboardScreen = document.getElementById('dashboardScreen');
+      const callScreen = document.getElementById('callScreen');
+      const incomingCallBox = document.getElementById('incomingCallBox');
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const loginScreen = document.getElementById('loginScreen');
-    const dashboardScreen = document.getElementById('dashboardScreen');
-    const callScreen = document.getElementById('callScreen');
-    const incomingCallBox = document.getElementById('incomingCallBox');
-    
-    const userIdInput = document.getElementById('userIdInput');
-    const loginBtn = document.getElementById('loginBtn');
-    const calleeIdInput = document.getElementById('calleeIdInput');
-    const startCallBtn = document.getElementById('startCallBtn');
-    const acceptCallBtn = document.getElementById('acceptCallBtn');
-    const rejectCallBtn = document.getElementById('rejectCallBtn');
-    const endCallBtn = document.getElementById('endCallBtn');
-    
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const callerName = document.getElementById('callerName');
-    const remoteLabel = document.getElementById('remoteLabel');
-    const status = document.getElementById('status');
-    const onlineList = document.getElementById('onlineList');
+      const userIdInput = document.getElementById('userIdInput');
+      const loginBtn = document.getElementById('loginBtn');
+      const calleeIdInput = document.getElementById('calleeIdInput');
+      const startCallBtn = document.getElementById('startCallBtn');
+      const acceptCallBtn = document.getElementById('acceptCallBtn');
+      const rejectCallBtn = document.getElementById('rejectCallBtn');
+      const endCallBtn = document.getElementById('endCallBtn');
 
-    let userId = null;
-    let socket = null;
-    let peerConnection = null;
-    let localStream = null;
-    let currentPeerId = null;
-    let incomingOffer = null;
-    let onlineUsersList = [];
+      const localVideo = document.getElementById('localVideo');
+      const remoteVideo = document.getElementById('remoteVideo');
+      const callerName = document.getElementById('callerName');
+      const remoteLabel = document.getElementById('remoteLabel');
+      const status = document.getElementById('status');
+      const onlineList = document.getElementById('onlineList');
 
-    const config = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    };
+      let userId = null;
+      let socket = null;
+      let peerConnection = null;
+      let localStream = null;
+      let currentPeerId = null;
+      let incomingOffer = null;
+      let onlineUsersList = [];
 
-    loginBtn.onclick = () => {
-      const id = userIdInput.value.trim();
-      if (!id) return alert('Enter a valid user ID');
-      
-      userId = id;
-      loginScreen.classList.remove('active');
-      dashboardScreen.classList.add('active');
+      const config = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+      };
 
-      socket = io('/video-socket');
-      socket.emit('join', userId);
-      socket.emit('request_online_users'); // Request initial online users
+      loginBtn.onclick = () => {
+        const id = userIdInput.value.trim();
+        if (!id) return alert('Enter a valid user ID');
 
-      setupSocketHandlers();
-    };
+        userId = id;
+        loginScreen.classList.remove('active');
+        dashboardScreen.classList.add('active');
 
-    function setupSocketHandlers() {
-      socket.on('incoming_call', (data) => {
-        console.log('📞 Incoming call from:', data.callerId, 'at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        currentPeerId = data.callerId;
-        incomingOffer = data.offer;
-        callerName.textContent = `${data.callerId} is calling...`;
-        incomingCallBox.style.display = 'block';
-      });
+        socket = io('/video-socket');
+        socket.emit('join', userId);
+        socket.emit('request_online_users'); // Request initial online users
 
-      socket.on('call_accepted', async (data) => {
-        console.log('✅ Call accepted by:', data.calleeId, 'at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        remoteLabel.textContent = data.calleeId;
+        setupSocketHandlers();
+      };
+
+      function setupSocketHandlers() {
+        socket.on('incoming_call', (data) => {
+          console.log('📞 Incoming call from:', data.callerId, 'at', new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          currentPeerId = data.callerId;
+          incomingOffer = data.offer;
+          callerName.textContent = `${data.callerId} is calling...`;
+          incomingCallBox.style.display = 'block';
+        });
+
+        socket.on('call_accepted', async (data) => {
+          console.log('✅ Call accepted by:', data.calleeId, 'at', new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          remoteLabel.textContent = data.calleeId;
+          try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            dashboardScreen.classList.remove('active');
+            callScreen.classList.add('active');
+          } catch (e) {
+            console.error('Error setting remote description:', e);
+            alert('Call setup failed');
+            resetCall();
+          }
+        });
+
+        socket.on('call_rejected', (data) => {
+          alert(`Call rejected by ${data.calleeId} at`, new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          resetCall();
+        });
+
+        socket.on('user_busy', (data) => {
+          alert(`User ${data.calleeId} is busy at`, new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          resetCall();
+        });
+
+        socket.on('call_error', (data) => {
+          alert('Error: ' + data.error + ' at', new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          resetCall();
+        });
+
+        socket.on('ice_candidate', async (data) => {
+          if (peerConnection) {
+            try {
+              await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.error('Error adding ICE candidate:', e);
+            }
+          }
+        });
+
+        socket.on('call_ended', (data) => {
+          alert(`Call ended by ${data.fromUserId} at`, new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          endCall();
+        });
+
+        socket.on('user_status', (data) => {
+          if (data.userId === userId) {
+            status.textContent = data.status === 'online' ? '🟢 Online' : '🔴 Offline';
+          }
+        });
+
+        socket.on('online_users', (users) => {
+          onlineUsersList = users.filter((u) => u !== userId && u !== null && u !== undefined);
+          console.log('Received online users at', new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }), ':', onlineUsersList);
+          updateOnlineList();
+        });
+      }
+
+      function updateOnlineList() {
+        onlineList.innerHTML = '';
+        onlineUsersList.forEach((user) => {
+          const li = document.createElement('li');
+          li.textContent = user;
+          li.onclick = () => {
+            calleeIdInput.value = user;
+            startCallBtn.classList.remove('disabled');
+          };
+          if (onlineUsersList.includes(user)) {
+            li.classList.remove('disabled');
+          } else {
+            li.classList.add('disabled');
+          }
+          onlineList.appendChild(li);
+        });
+        startCallBtn.classList.toggle('disabled', !onlineUsersList.includes(calleeIdInput.value.trim()));
+      }
+
+      startCallBtn.onclick = async () => {
+        const calleeId = calleeIdInput.value.trim();
+        console.log(
+          'Attempting to call:',
+          calleeId,
+          'Online users:',
+          onlineUsersList,
+          'at',
+          new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }),
+        );
+        if (!calleeId || calleeId === userId || !onlineUsersList.includes(calleeId)) {
+          alert('Please select an online user to call');
+          return;
+        }
+
+        currentPeerId = calleeId;
+        remoteLabel.textContent = currentPeerId;
+
         try {
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localVideo.srcObject = localStream;
+
+          peerConnection = new RTCPeerConnection(config);
+
+          localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
+
+          peerConnection.ontrack = (event) => {
+            remoteVideo.srcObject = event.streams[0];
+          };
+
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              socket.emit('ice_candidate', {
+                candidate: event.candidate,
+                toUserId: currentPeerId,
+              });
+            }
+          };
+
+          const offer = await peerConnection.createOffer();
+          await peerConnection.setLocalDescription(offer);
+
+          socket.emit('call_user', {
+            callerId: userId,
+            calleeId: currentPeerId,
+            offer: peerConnection.localDescription,
+          });
+
           dashboardScreen.classList.remove('active');
           callScreen.classList.add('active');
         } catch (e) {
-          console.error('Error setting remote description:', e);
-          alert('Call setup failed');
+          console.error('Call initiation error:', e);
+          alert('Failed to start call: ' + e.message + ' at', new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
           resetCall();
         }
-      });
+      };
 
-      socket.on('call_rejected', (data) => {
-        alert(`Call rejected by ${data.calleeId} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        resetCall();
-      });
+      acceptCallBtn.onclick = async () => {
+        incomingCallBox.style.display = 'none';
+        remoteLabel.textContent = currentPeerId;
 
-      socket.on('user_busy', (data) => {
-        alert(`User ${data.calleeId} is busy at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        resetCall();
-      });
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localVideo.srcObject = localStream;
 
-      socket.on('call_error', (data) => {
-        alert('Error: ' + data.error + ' at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        resetCall();
-      });
+          peerConnection = new RTCPeerConnection(config);
 
-      socket.on('ice_candidate', async (data) => {
-        if (peerConnection) {
-          try {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-          } catch (e) {
-            console.error('Error adding ICE candidate:', e);
-          }
+          localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
+
+          peerConnection.ontrack = (event) => {
+            remoteVideo.srcObject = event.streams[0];
+          };
+
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              socket.emit('ice_candidate', {
+                candidate: event.candidate,
+                toUserId: currentPeerId,
+              });
+            }
+          };
+
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+
+          socket.emit('accept_call', {
+            callerId: currentPeerId,
+            calleeId: userId,
+            answer: peerConnection.localDescription,
+          });
+
+          dashboardScreen.classList.remove('active');
+          callScreen.classList.add('active');
+        } catch (e) {
+          console.error('Accept call error:', e);
+          alert('Failed to accept call: ' + e.message + ' at', new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }));
+          resetCall();
         }
-      });
+      };
 
-      socket.on('call_ended', (data) => {
-        alert(`Call ended by ${data.fromUserId} at`, new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        endCall();
-      });
-
-      socket.on('user_status', (data) => {
-        if (data.userId === userId) {
-          status.textContent = data.status === 'online' ? '🟢 Online' : '🔴 Offline';
-        }
-      });
-
-      socket.on('online_users', (users) => {
-        onlineUsersList = users.filter(u => u !== userId && u !== null && u !== undefined);
-        console.log('Received online users at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }), ':', onlineUsersList);
-        updateOnlineList();
-      });
-    }
-
-    function updateOnlineList() {
-      onlineList.innerHTML = '';
-      onlineUsersList.forEach(user => {
-        const li = document.createElement('li');
-        li.textContent = user;
-        li.onclick = () => {
-          calleeIdInput.value = user;
-          startCallBtn.classList.remove('disabled');
-        };
-        if (onlineUsersList.includes(user)) {
-          li.classList.remove('disabled');
-        } else {
-          li.classList.add('disabled');
-        }
-        onlineList.appendChild(li);
-      });
-      startCallBtn.classList.toggle('disabled', !onlineUsersList.includes(calleeIdInput.value.trim()));
-    }
-
-    startCallBtn.onclick = async () => {
-      const calleeId = calleeIdInput.value.trim();
-      console.log('Attempting to call:', calleeId, 'Online users:', onlineUsersList, 'at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-      if (!calleeId || calleeId === userId || !onlineUsersList.includes(calleeId)) {
-        alert('Please select an online user to call');
-        return;
-      }
-
-      currentPeerId = calleeId;
-      remoteLabel.textContent = currentPeerId;
-
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
-        
-        peerConnection = new RTCPeerConnection(config);
-        
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-        peerConnection.ontrack = (event) => {
-          remoteVideo.srcObject = event.streams[0];
-        };
-
-        peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
-            socket.emit('ice_candidate', {
-              candidate: event.candidate,
-              toUserId: currentPeerId
-            });
-          }
-        };
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        socket.emit('call_user', {
-          callerId: userId,
-          calleeId: currentPeerId,
-          offer: peerConnection.localDescription
-        });
-
-        dashboardScreen.classList.remove('active');
-        callScreen.classList.add('active');
-      } catch (e) {
-        console.error('Call initiation error:', e);
-        alert('Failed to start call: ' + e.message + ' at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        resetCall();
-      }
-    };
-
-    acceptCallBtn.onclick = async () => {
-      incomingCallBox.style.display = 'none';
-      remoteLabel.textContent = currentPeerId;
-
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
-        
-        peerConnection = new RTCPeerConnection(config);
-        
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-        peerConnection.ontrack = (event) => {
-          remoteVideo.srcObject = event.streams[0];
-        };
-
-        peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
-            socket.emit('ice_candidate', {
-              candidate: event.candidate,
-              toUserId: currentPeerId
-            });
-          }
-        };
-
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingOffer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-
-        socket.emit('accept_call', {
+      rejectCallBtn.onclick = () => {
+        incomingCallBox.style.display = 'none';
+        socket.emit('reject_call', {
           callerId: currentPeerId,
           calleeId: userId,
-          answer: peerConnection.localDescription
         });
+        currentPeerId = null;
+        incomingOffer = null;
+      };
 
-        dashboardScreen.classList.remove('active');
-        callScreen.classList.add('active');
-      } catch (e) {
-        console.error('Accept call error:', e);
-        alert('Failed to accept call: ' + e.message + ' at', new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" }));
-        resetCall();
+      endCallBtn.onclick = endCall;
+
+      function endCall() {
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+        if (localStream) {
+          localStream.getTracks().forEach((track) => track.stop());
+          localStream = null;
+        }
+        localVideo.srcObject = null;
+        remoteVideo.srcObject = null;
+
+        if (currentPeerId) {
+          socket.emit('end_call', {
+            userId: userId,
+            peerId: currentPeerId,
+          });
+        }
+
+        callScreen.classList.remove('active');
+        dashboardScreen.classList.add('active');
+        incomingCallBox.style.display = 'none';
+        currentPeerId = null;
+        incomingOffer = null;
       }
-    };
 
-    rejectCallBtn.onclick = () => {
-      incomingCallBox.style.display = 'none';
-      socket.emit('reject_call', {
-        callerId: currentPeerId,
-        calleeId: userId
-      });
-      currentPeerId = null;
-      incomingOffer = null;
-    };
-
-    endCallBtn.onclick = endCall;
-
-    function endCall() {
-      if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
+      function resetCall() {
+        endCall();
       }
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-      }
-      localVideo.srcObject = null;
-      remoteVideo.srcObject = null;
-      
-      if (currentPeerId) {
-        socket.emit('end_call', {
-          userId: userId,
-          peerId: currentPeerId
-        });
-      }
-      
-      callScreen.classList.remove('active');
-      dashboardScreen.classList.add('active');
-      incomingCallBox.style.display = 'none';
-      currentPeerId = null;
-      incomingOffer = null;
-    }
-
-    function resetCall() {
-      endCall();
-    }
-  </script>
-</body>
+    </script>
+  </body>
 </html>

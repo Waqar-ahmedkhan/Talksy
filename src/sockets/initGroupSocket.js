@@ -483,21 +483,25 @@ export const initGroupSocket = (server) => {
           return callback({ success: false, message: 'Group not found' });
         }
 
+        // Filter valid members (handle nulls from population)
+        const validMembers = group.members.filter((m) => m && m._id);
+
         // Check membership
-        if (!group.members.map((m) => m._id.toString()).includes(userId)) {
+        const isMember = validMembers.some((m) => m._id.toString() === userId);
+        if (!isMember) {
           return callback({ success: false, message: 'Not a group member' });
         }
 
         // Fetch online status & lastSeen for all members
-        const phoneNumbers = group.members.map((m) => m.phone);
+        const phoneNumbers = validMembers.map((m) => m.phone);
         const users = await User.find({ phone: { $in: phoneNumbers } }).select('phone online lastSeen');
         const userMap = new Map(users.map((u) => [u.phone, u]));
 
-        const membersWithStatus = group.members.map((member) => ({
+        const membersWithStatus = validMembers.map((member) => ({
           ...member.toObject(),
           online: userMap.get(member.phone)?.online || false,
           lastSeen: userMap.get(member.phone)?.lastSeen || null,
-          isAdmin: group.admins.map((a) => a._id.toString()).includes(member._id.toString()),
+          isAdmin: group.admins.map((a) => (a._id ? a._id.toString() : a.toString())).includes(member._id.toString()),
           isCreator: member._id.toString() === group.createdBy._id.toString(),
         }));
 
@@ -1195,48 +1199,44 @@ export const initGroupSocket = (server) => {
         }
 
         const skip = (page - 1) * limit;
-        // Fetch messages with populated senderId
-        const messages = await Chat.find({ groupId }).populate('senderId', 'displayName phone').sort({ createdAt: -1 }).skip(skip).limit(limit);
+
+        // 1. Fetch raw messages (without populate) to preserve senderId
+        const messages = await Chat.find({ groupId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(); // lean() for performance
+
         console.log(`[GET_GROUP_MESSAGES] Fetched ${messages.length} messages for groupId=${groupId}, page=${page}`);
 
-        // Only update delivered/read for messages with valid senderId
-        const unreadMessages = messages.filter((msg) => {
-          // Include only messages from other users with valid senderId
-          return msg.senderId && msg.senderId.toString() !== userId && msg.status === 'sent';
-        });
-        if (unreadMessages.length > 0) {
-          const unreadIds = unreadMessages.map((msg) => msg._id);
+        // 2. Collect unique Sender IDs
+        const senderIds = [...new Set(messages.map((m) => (m.senderId ? m.senderId.toString() : null)).filter((id) => id))];
+
+        // 3. Fetch Sender Details efficiently
+        const senders = await User.find({ _id: { $in: senderIds } })
+          .select('displayName phone')
+          .lean();
+
+        const senderMap = new Map(senders.map((u) => [u._id.toString(), u]));
+
+        // 4. Update status for unread messages (from others)
+        const unreadIds = messages.filter((m) => m.status === 'sent' && m.senderId && m.senderId.toString() !== userId).map((m) => m._id);
+
+        if (unreadIds.length > 0) {
           await Chat.updateMany({ _id: { $in: unreadIds } }, { status: 'delivered' });
-          console.log(`[GET_GROUP_MESSAGES] Marked ${unreadMessages.length} messages as delivered for groupId=${groupId}`);
+          console.log(`[GET_GROUP_MESSAGES] Marked ${unreadIds.length} messages as delivered for groupId=${groupId}`);
         }
 
-        // FIX: Better handling of populated vs non-populated senderId
+        // 5. Construct payload
         const messagesPayload = messages.reverse().map((msg) => {
-          const msgObj = msg.toObject();
-
-          // Handle SenderID Retrieval (populated or raw)
-          let validSenderId = '';
-          let validDisplayName = 'Unknown';
-
-          if (msgObj.senderId && typeof msgObj.senderId === 'object') {
-            // Populated User Object
-            validSenderId = msgObj.senderId._id ? msgObj.senderId._id.toString() : '';
-            validDisplayName = msgObj.senderId.displayName || 'Unknown';
-          } else if (msgObj.senderId) {
-            // Raw ID String or ObjectId
-            validSenderId = msgObj.senderId.toString();
-          }
-
-          const finalDisplayName = msgObj.senderDisplayName || validDisplayName;
+          const senderIdStr = msg.senderId ? msg.senderId.toString() : '';
+          const senderDetails = senderMap.get(senderIdStr);
 
           return {
-            ...msgObj,
-            _id: msgObj._id.toString(), // Ensure _id is string
-            id: msgObj._id.toString(), // Ensure id is string
-            senderId: validSenderId, // Ensure senderId is string
-            senderDisplayName: finalDisplayName,
-            groupId: msgObj.groupId?.toString?.() || msgObj.groupId,
-            timestamp: msgObj.createdAt ? new Date(msgObj.createdAt).toISOString() : new Date().toISOString(),
+            ...msg,
+            _id: msg._id.toString(),
+            id: msg._id.toString(),
+            senderId: senderIdStr, // Raw ID always preserved
+            senderDisplayName: msg.senderDisplayName || (senderDetails ? senderDetails.displayName : 'Unknown'),
+            senderPhone: senderDetails ? senderDetails.phone : '',
+            groupId: msg.groupId?.toString() || groupId,
+            timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
           };
         });
 
