@@ -41,6 +41,13 @@ const rtcConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
 };
 
+const updateRtcConfig = (newIceServers) => {
+  if (Array.isArray(newIceServers) && newIceServers.length > 0) {
+    rtcConfig.iceServers = newIceServers;
+    console.log('[RTC_CONFIG] Updated ICE servers:', rtcConfig.iceServers);
+  }
+};
+
 let socket = null;
 let userId = null;
 let onlineUsers = [];

@@ -1,9 +1,9 @@
 // lib/sockets/video_socket.js
 // FIXED VERSION - Remote video issue resolved
-import { Server } from "socket.io";
-import { mongoose } from "../config/db.js";
-import User from "../models/User.js";
-import Block from "../models/Block.js";
+import { Server } from 'socket.io';
+import { mongoose } from '../config/db.js';
+import User from '../models/User.js';
+import Block from '../models/Block.js';
 
 /**
  * PRODUCTION-GRADE Video Calling Socket with WebRTC signaling
@@ -23,23 +23,26 @@ import Block from "../models/Block.js";
  */
 export const initVideoSocket = (server) => {
   const io = new Server(server, {
-    cors: { origin: "*" },
-    path: "/video-socket",
+    cors: { origin: '*' },
+    path: '/video-socket',
   });
 
-  const testModeValue = (process.env.VIDEO_TEST_MODE || "").toLowerCase().trim();
-  const testMode = testModeValue === "true" || testModeValue === "1" || testModeValue === "yes";
-  const testIdsEnv = process.env.VIDEO_TEST_IDS || "test-user-1,test-user-2";
-  const testIds = testIdsEnv.split(",").map((id) => id.trim()).filter(Boolean);
+  const testModeValue = (process.env.VIDEO_TEST_MODE || '').toLowerCase().trim();
+  const testMode = testModeValue === 'true' || testModeValue === '1' || testModeValue === 'yes';
+  const testIdsEnv = process.env.VIDEO_TEST_IDS || 'test-user-1,test-user-2';
+  const testIds = testIdsEnv
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
 
   // Core data structures
   const onlineUsers = new Map(); // userId (MongoDB ID) -> socketId
-  const busyUsers = new Set();   // userIds currently in any call
+  const busyUsers = new Set(); // userIds currently in any call
   const pendingCalls = new Map(); // calleeId -> { callerId, type, offer, timestamp }
   const phoneToUserIdMap = new Map(); // phone -> MongoDB ObjectID
 
   // Helper for PKT timestamp
-  const getPKTTimestamp = () => new Date().toLocaleString("en-PK", { timeZone: "Asia/Karachi" });
+  const getPKTTimestamp = () => new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' });
 
   // Enhanced user ID resolution with cache validation
   const resolveToUserId = async (identifier) => {
@@ -93,10 +96,7 @@ export const initVideoSocket = (server) => {
     // Fallback database lookup with validation
     try {
       const user = await User.findOne({
-        $or: [
-          { phone: idStr },
-          { _id: idStr }
-        ]
+        $or: [{ phone: idStr }, { _id: idStr }],
       });
       if (user && user._id) {
         const userId = user._id.toString();
@@ -142,7 +142,7 @@ export const initVideoSocket = (server) => {
   const broadcastOnlineUsers = () => {
     try {
       const onlineUsersArray = Array.from(onlineUsers.keys());
-      io.emit("online_users", onlineUsersArray);
+      io.emit('online_users', onlineUsersArray);
       console.log(`[VIDEO_BROADCAST] Online users updated at ${getPKTTimestamp()}: [${onlineUsersArray.join(', ')}]`);
     } catch (err) {
       console.error(`[VIDEO_BROADCAST_ERROR] Failed to broadcast online users: ${err.message} at ${getPKTTimestamp()}`);
@@ -150,7 +150,7 @@ export const initVideoSocket = (server) => {
   };
 
   // Clean up user resources on disconnect
-  const cleanupUserResources = async (userId, socketId, reason = "disconnect") => {
+  const cleanupUserResources = async (userId, socketId, reason = 'disconnect') => {
     try {
       console.log(`[VIDEO_CLEANUP] Starting cleanup for user ${userId} (socket: ${socketId}, reason: ${reason}) at ${getPKTTimestamp()}`);
 
@@ -165,9 +165,9 @@ export const initVideoSocket = (server) => {
 
         const callerSocket = onlineUsers.get(pending.callerId);
         if (callerSocket) {
-          io.to(callerSocket).emit("call_ended", {
+          io.to(callerSocket).emit('call_ended', {
             calleeId: userId,
-            reason: reason === "reconnect" ? "user_reconnected" : "callee_offline"
+            reason: reason === 'reconnect' ? 'user_reconnected' : 'callee_offline',
           });
           console.log(`[VIDEO_CLEANUP] Notified caller ${pending.callerId} about ended call at ${getPKTTimestamp()}`);
         }
@@ -181,9 +181,9 @@ export const initVideoSocket = (server) => {
 
           const calleeSocket = onlineUsers.get(calleeId);
           if (calleeSocket) {
-            io.to(calleeSocket).emit("call_ended", {
+            io.to(calleeSocket).emit('call_ended', {
               callerId: userId,
-              reason: reason === "reconnect" ? "caller_reconnected" : "caller_offline"
+              reason: reason === 'reconnect' ? 'caller_reconnected' : 'caller_offline',
             });
             console.log(`[VIDEO_CLEANUP] Notified callee ${calleeId} about ended call at ${getPKTTimestamp()}`);
           }
@@ -213,11 +213,27 @@ export const initVideoSocket = (server) => {
     }
   };
 
-  io.on("connection", (socket) => {
+  // ICE Server Configuration (Computed once)
+  // SECURITY: Default to env vars, fallback to hardcoded (dev only)
+  const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+
+  const turnUrl = process.env.TURN_URL || 'turn:global.turn.twilio.com:3478?transport=udp';
+  const turnUsername = process.env.TURN_USERNAME || 'AC13af0686bc270cc8538fa00f57be8b';
+  const turnCredential = process.env.TURN_CREDENTIAL || '8a075e257d399464af653851a88457';
+
+  if (turnUrl && turnUsername && turnCredential) {
+    iceServers.push({
+      urls: turnUrl,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  }
+
+  io.on('connection', (socket) => {
     console.log(`[VIDEO_CONNECTION] New socket connected: ${socket.id} at ${getPKTTimestamp()}`);
 
     // USER JOIN HANDLER - ENFORCES SINGLE SOCKET PER USER
-    socket.on("join", async (userId) => {
+    socket.on('join', async (userId) => {
       console.log(`[VIDEO_JOIN] Join request received: userId=${userId} (type: ${typeof userId}) from socket ${socket.id} at ${getPKTTimestamp()}`);
 
       if (!userId) {
@@ -239,7 +255,9 @@ export const initVideoSocket = (server) => {
 
       const resolvedUserId = await resolveToUserId(userIdStr);
       if (!resolvedUserId) {
-        console.log(`[VIDEO_JOIN_ERROR] Could not resolve userId "${userIdStr}" to valid user, disconnecting socket: ${socket.id} at ${getPKTTimestamp()}`);
+        console.log(
+          `[VIDEO_JOIN_ERROR] Could not resolve userId "${userIdStr}" to valid user, disconnecting socket: ${socket.id} at ${getPKTTimestamp()}`,
+        );
         return socket.disconnect(true);
       }
 
@@ -248,9 +266,11 @@ export const initVideoSocket = (server) => {
       // ENFORCE SINGLE SOCKET PER USER
       if (onlineUsers.has(resolvedUserId)) {
         const oldSocketId = onlineUsers.get(resolvedUserId);
-        console.log(`[VIDEO_JOIN_REPLACE] User ${resolvedUserId} already online on socket ${oldSocketId}, replacing with ${socket.id} at ${getPKTTimestamp()}`);
+        console.log(
+          `[VIDEO_JOIN_REPLACE] User ${resolvedUserId} already online on socket ${oldSocketId}, replacing with ${socket.id} at ${getPKTTimestamp()}`,
+        );
 
-        await cleanupUserResources(resolvedUserId, oldSocketId, "reconnect");
+        await cleanupUserResources(resolvedUserId, oldSocketId, 'reconnect');
 
         const oldSocket = io.sockets.sockets.get(oldSocketId);
         if (oldSocket) {
@@ -272,22 +292,26 @@ export const initVideoSocket = (server) => {
       }
 
       broadcastOnlineUsers();
+
+      // Send CACHED ICE Server Configuration
+      socket.emit('ice_config', iceServers);
+      console.log(`[VIDEO_ICE_CONFIG] Sent ICE config to ${resolvedUserId} at ${getPKTTimestamp()}`);
     });
 
     // REQUEST ONLINE USERS
-    socket.on("request_online_users", () => {
+    socket.on('request_online_users', () => {
       console.log(`[VIDEO_REQUEST] Online users requested by socket ${socket.id} (user: ${socket.userId || 'unknown'}) at ${getPKTTimestamp()}`);
       broadcastOnlineUsers();
     });
 
     // CALL INITIATION
-    socket.on("call_user", async ({ callerId, calleeId, offer, callType = "video" }) => {
+    socket.on('call_user', async ({ callerId, calleeId, offer, callType = 'video' }) => {
       try {
         console.log(`[VIDEO_CALL_INIT] Call request: ${callerId} → ${calleeId} [${callType}] from socket ${socket.id} at ${getPKTTimestamp()}`);
 
         if (!callerId || !calleeId || !offer) {
           console.log(`[VIDEO_CALL_ERROR] Missing required fields in call_user payload at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Missing required fields" });
+          return socket.emit('call_error', { error: 'Missing required fields' });
         }
 
         const resolvedCaller = await resolveToUserId(callerId);
@@ -295,22 +319,22 @@ export const initVideoSocket = (server) => {
 
         if (!resolvedCaller || !resolvedCallee) {
           console.log(`[VIDEO_CALL_ERROR] Invalid user identifiers: caller=${callerId}, callee=${calleeId} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Invalid user identifiers" });
+          return socket.emit('call_error', { error: 'Invalid user identifiers' });
         }
 
         if (resolvedCaller === resolvedCallee) {
           console.log(`[VIDEO_CALL_ERROR] Self-call attempt by ${resolvedCaller} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Cannot call yourself" });
+          return socket.emit('call_error', { error: 'Cannot call yourself' });
         }
 
         if (!onlineUsers.has(resolvedCaller)) {
           console.log(`[VIDEO_CALL_ERROR] Caller ${resolvedCaller} not online at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "You are not online" });
+          return socket.emit('call_error', { error: 'You are not online' });
         }
 
         if (!onlineUsers.has(resolvedCallee)) {
           console.log(`[VIDEO_CALL_ERROR] Callee ${resolvedCallee} is offline at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "User is offline" });
+          return socket.emit('call_error', { error: 'User is offline' });
         }
 
         // Check blocks
@@ -323,20 +347,20 @@ export const initVideoSocket = (server) => {
           });
           if (blocked) {
             console.log(`[VIDEO_CALL_ERROR] Call blocked between ${resolvedCaller} and ${resolvedCallee} at ${getPKTTimestamp()}`);
-            return socket.emit("call_error", { error: "User is blocked" });
+            return socket.emit('call_error', { error: 'User is blocked' });
           }
         }
 
         // Check if callee is busy
         if (busyUsers.has(resolvedCallee) || pendingCalls.has(resolvedCallee)) {
           console.log(`[VIDEO_CALL_ERROR] Callee ${resolvedCallee} is busy at ${getPKTTimestamp()}`);
-          return socket.emit("user_busy", { calleeId: resolvedCallee });
+          return socket.emit('user_busy', { calleeId: resolvedCallee });
         }
 
         // Validate offer
-        if (!offer.type || !offer.sdp || offer.type !== "offer") {
+        if (!offer.type || !offer.sdp || offer.type !== 'offer') {
           console.log(`[VIDEO_CALL_ERROR] Invalid offer from ${resolvedCaller} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Invalid call offer" });
+          return socket.emit('call_error', { error: 'Invalid call offer' });
         }
 
         // Store pending call
@@ -344,7 +368,7 @@ export const initVideoSocket = (server) => {
           callerId: resolvedCaller,
           offer,
           callType,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
         console.log(`[VIDEO_CALL_PENDING] Stored pending call: ${resolvedCaller} → ${resolvedCallee} [${callType}] at ${getPKTTimestamp()}`);
 
@@ -353,34 +377,33 @@ export const initVideoSocket = (server) => {
         if (calleeSocket) {
           const callerPhone = await getPhoneFromUserId(resolvedCaller);
 
-          io.to(calleeSocket).emit("incoming_call", {
+          io.to(calleeSocket).emit('incoming_call', {
             callerId: callerPhone || resolvedCaller,
             callerUserId: resolvedCaller,
             calleeUserId: resolvedCallee,
             offer,
-            callType
+            callType,
           });
           console.log(`[VIDEO_CALL_INCOMING] Sent incoming_call to ${resolvedCallee} (socket: ${calleeSocket}) at ${getPKTTimestamp()}`);
         } else {
           console.warn(`[VIDEO_CALL_WARN] Callee socket not found despite online status for ${resolvedCallee} at ${getPKTTimestamp()}`);
           pendingCalls.delete(resolvedCallee);
-          return socket.emit("call_error", { error: "Callee unavailable" });
+          return socket.emit('call_error', { error: 'Callee unavailable' });
         }
 
-        socket.emit("calling", {
+        socket.emit('calling', {
           calleeId: resolvedCallee,
-          callType
+          callType,
         });
         console.log(`[VIDEO_CALL_SUCCESS] Call initiated: ${resolvedCaller} → ${resolvedCallee} [${callType}] at ${getPKTTimestamp()}`);
-
       } catch (err) {
         console.error(`[VIDEO_CALL_UNEXPECTED_ERROR] ${err.message} at ${getPKTTimestamp()}`, err);
-        socket.emit("call_error", { error: "Failed to initiate call" });
+        socket.emit('call_error', { error: 'Failed to initiate call' });
       }
     });
 
     // ACCEPT CALL - FIXED ORDER
-    socket.on("accept_call", async ({ callerId, calleeId, answer }) => {
+    socket.on('accept_call', async ({ callerId, calleeId, answer }) => {
       try {
         console.log(`[VIDEO_ACCEPT] Accept call: ${callerId} ← ${calleeId} at ${getPKTTimestamp()}`);
 
@@ -389,18 +412,18 @@ export const initVideoSocket = (server) => {
 
         if (!resolvedCaller || !resolvedCallee) {
           console.log(`[VIDEO_ACCEPT_ERROR] Invalid user IDs at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Invalid user identifiers" });
+          return socket.emit('call_error', { error: 'Invalid user identifiers' });
         }
 
         const pending = pendingCalls.get(resolvedCallee);
         if (!pending || pending.callerId !== resolvedCaller) {
           console.log(`[VIDEO_ACCEPT_ERROR] No valid pending call for ${resolvedCallee} from ${resolvedCaller} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "No pending call to accept" });
+          return socket.emit('call_error', { error: 'No pending call to accept' });
         }
 
-        if (!answer?.type || !answer?.sdp || answer.type !== "answer") {
+        if (!answer?.type || !answer?.sdp || answer.type !== 'answer') {
           console.log(`[VIDEO_ACCEPT_ERROR] Invalid answer from ${resolvedCallee} at ${getPKTTimestamp()}`);
-          return socket.emit("call_error", { error: "Invalid call answer" });
+          return socket.emit('call_error', { error: 'Invalid call answer' });
         }
 
         // Remove from pending calls
@@ -412,7 +435,7 @@ export const initVideoSocket = (server) => {
         console.log(`[VIDEO_ACCEPT] Call accepted: ${resolvedCaller} ↔️ ${resolvedCallee}, marked as busy at ${getPKTTimestamp()}`);
 
         // Create room and join both sockets
-        const callRoom = [resolvedCaller, resolvedCallee].sort().join("-");
+        const callRoom = [resolvedCaller, resolvedCallee].sort().join('-');
         socket.join(callRoom);
         console.log(`[VIDEO_ROOM] Callee ${resolvedCallee} joined room ${callRoom} at ${getPKTTimestamp()}`);
 
@@ -425,27 +448,26 @@ export const initVideoSocket = (server) => {
           }
 
           // Send call_accepted with answer AFTER room is ready
-          io.to(callerSocket).emit("call_accepted", {
+          io.to(callerSocket).emit('call_accepted', {
             answer,
             callerId: resolvedCaller,
             callerUserId: resolvedCaller,
             calleeId: resolvedCallee,
             calleeUserId: resolvedCallee,
-            callType: pending.callType
+            callType: pending.callType,
           });
           console.log(`[VIDEO_ACCEPT_SENT] Sent call_accepted to ${resolvedCaller} at ${getPKTTimestamp()}`);
         }
 
         console.log(`[VIDEO_ACCEPT_SUCCESS] Call connected in room ${callRoom} at ${getPKTTimestamp()}`);
-
       } catch (err) {
         console.error(`[VIDEO_ACCEPT_UNEXPECTED_ERROR] ${err.message} at ${getPKTTimestamp()}`, err);
-        socket.emit("call_error", { error: "Failed to accept call" });
+        socket.emit('call_error', { error: 'Failed to accept call' });
       }
     });
 
     // REJECT CALL
-    socket.on("reject_call", async ({ callerId, calleeId }) => {
+    socket.on('reject_call', async ({ callerId, calleeId }) => {
       console.log(`[VIDEO_REJECT] Reject call: ${callerId} ← ${calleeId} at ${getPKTTimestamp()}`);
 
       const resolvedCaller = await resolveToUserId(callerId);
@@ -453,7 +475,7 @@ export const initVideoSocket = (server) => {
 
       if (!resolvedCaller || !resolvedCallee) {
         console.log(`[VIDEO_REJECT_ERROR] Invalid user IDs at ${getPKTTimestamp()}`);
-        return socket.emit("call_error", { error: "Invalid user identifiers" });
+        return socket.emit('call_error', { error: 'Invalid user identifiers' });
       }
 
       const pending = pendingCalls.get(resolvedCallee);
@@ -467,21 +489,21 @@ export const initVideoSocket = (server) => {
 
       const callerSocket = onlineUsers.get(resolvedCaller);
       if (callerSocket) {
-        io.to(callerSocket).emit("call_rejected", {
+        io.to(callerSocket).emit('call_rejected', {
           calleeId: resolvedCallee,
-          reason: "rejected"
+          reason: 'rejected',
         });
         console.log(`[VIDEO_REJECT_SENT] Rejection sent to ${resolvedCaller} at ${getPKTTimestamp()}`);
       }
     });
 
     // ICE CANDIDATE HANDLING - FIXED: IMMEDIATE RELAY
-    socket.on("ice_candidate", async ({ candidate, toUserId }) => {
+    socket.on('ice_candidate', async ({ candidate, toUserId }) => {
       console.log(`[VIDEO_ICE] ICE candidate received for ${toUserId} from socket ${socket.id} (user: ${socket.userId}) at ${getPKTTimestamp()}`);
 
       if (!candidate || !candidate.candidate) {
         console.log(`[VIDEO_ICE_ERROR] Invalid ICE candidate structure at ${getPKTTimestamp()}`);
-        return socket.emit("call_error", { error: "Invalid ICE candidate" });
+        return socket.emit('call_error', { error: 'Invalid ICE candidate' });
       }
 
       if (!toUserId || toUserId === 'undefined' || toUserId === 'null' || toUserId === null) {
@@ -504,9 +526,9 @@ export const initVideoSocket = (server) => {
       // RELAY IMMEDIATELY - WebRTC handles buffering natively
       const targetSocket = onlineUsers.get(resolvedToUserId);
       if (targetSocket) {
-        io.to(targetSocket).emit("ice_candidate", {
+        io.to(targetSocket).emit('ice_candidate', {
           candidate,
-          fromUserId: socket.userId
+          fromUserId: socket.userId,
         });
         console.log(`[VIDEO_ICE_SENT] ICE candidate relayed from ${socket.userId} to ${resolvedToUserId} at ${getPKTTimestamp()}`);
       } else {
@@ -515,7 +537,7 @@ export const initVideoSocket = (server) => {
     });
 
     // END CALL
-    socket.on("end_call", async ({ userId, peerId }) => {
+    socket.on('end_call', async ({ userId, peerId }) => {
       console.log(`[VIDEO_END] End call request: ${userId} ↔️ ${peerId} from socket ${socket.id} at ${getPKTTimestamp()}`);
 
       const resolvedUser = await resolveToUserId(userId);
@@ -532,14 +554,14 @@ export const initVideoSocket = (server) => {
 
       const peerSocket = onlineUsers.get(resolvedPeer);
       if (peerSocket) {
-        io.to(peerSocket).emit("call_ended", {
+        io.to(peerSocket).emit('call_ended', {
           fromUserId: resolvedUser,
-          reason: "ended_by_user"
+          reason: 'ended_by_user',
         });
         console.log(`[VIDEO_END_SENT] Call ended notification sent to ${resolvedPeer} at ${getPKTTimestamp()}`);
       }
 
-      const callRoom = [resolvedUser, resolvedPeer].sort().join("-");
+      const callRoom = [resolvedUser, resolvedPeer].sort().join('-');
       socket.leave(callRoom);
       console.log(`[VIDEO_END_ROOM] User ${resolvedUser} left room ${callRoom} at ${getPKTTimestamp()}`);
 
@@ -553,8 +575,10 @@ export const initVideoSocket = (server) => {
     });
 
     // DISCONNECT HANDLER
-    socket.on("disconnect", async (reason) => {
-      console.log(`[VIDEO_DISCONNECT] Socket ${socket.id} disconnected (user: ${socket.userId || 'unknown'}, reason: ${reason}) at ${getPKTTimestamp()}`);
+    socket.on('disconnect', async (reason) => {
+      console.log(
+        `[VIDEO_DISCONNECT] Socket ${socket.id} disconnected (user: ${socket.userId || 'unknown'}, reason: ${reason}) at ${getPKTTimestamp()}`,
+      );
 
       if (socket.userId) {
         await cleanupUserResources(socket.userId, socket.id, reason);
