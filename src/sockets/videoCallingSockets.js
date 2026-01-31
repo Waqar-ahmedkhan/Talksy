@@ -1,26 +1,8 @@
-// lib/sockets/video_socket.js
-// FIXED VERSION - Remote video issue resolved
 import { Server } from 'socket.io';
 import { mongoose } from '../config/db.js';
 import User from '../models/User.js';
 import Block from '../models/Block.js';
 
-/**
- * PRODUCTION-GRADE Video Calling Socket with WebRTC signaling
- * ✅ ICE Candidate immediate relay (removed unnecessary buffering)
- * ✅ Single socket per user enforcement
- * ✅ Robust user ID resolution with cache invalidation
- * ✅ Comprehensive call state management
- * ✅ Graceful disconnect handling with peer notification
- * ✅ Detailed logging with PKT timestamps
- * ✅ Memory leak prevention with cleanup
- *
- * FIXES APPLIED:
- * 1. Removed busyUsers check from ICE candidate handler - candidates now relay immediately
- * 2. Fixed accept_call flow - users marked busy BEFORE sending call_accepted
- * 3. Removed ICE buffering logic - WebRTC handles candidate buffering natively
- * 4. Room join happens BEFORE call_accepted emission for proper relay
- */
 export const initVideoSocket = (server) => {
   const io = new Server(server, {
     cors: { origin: '*' },
@@ -35,7 +17,6 @@ export const initVideoSocket = (server) => {
     .map((id) => id.trim())
     .filter(Boolean);
 
-  // Core data structures
   const onlineUsers = new Map(); // userId (MongoDB ID) -> socketId
   const busyUsers = new Set(); // userIds currently in any call
   const pendingCalls = new Map(); // calleeId -> { callerId, type, offer, timestamp }
@@ -213,21 +194,16 @@ export const initVideoSocket = (server) => {
     }
   };
 
-  // ICE Server Configuration (Computed once)
-  // SECURITY: Default to env vars, fallback to hardcoded (dev only)
-  const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
-
-  const turnUrl = process.env.TURN_URL || 'turn:global.turn.twilio.com:3478?transport=udp';
-  const turnUsername = process.env.TURN_USERNAME || 'AC13af0686bc270cc8538fa00f57be8b';
-  const turnCredential = process.env.TURN_CREDENTIAL || '8a075e257d399464af653851a88457';
-
-  if (turnUrl && turnUsername && turnCredential) {
-    iceServers.push({
-      urls: turnUrl,
-      username: turnUsername,
-      credential: turnCredential,
-    });
-  }
+  // ICE Server Configuration (Optimized & Hardcoded)
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+      username: 'AC13af0686bc270cc8538fa00f57be8b',
+      credential: '8a075e257d399464af653851a88457',
+    },
+  ];
 
   io.on('connection', (socket) => {
     console.log(`[VIDEO_CONNECTION] New socket connected: ${socket.id} at ${getPKTTimestamp()}`);
